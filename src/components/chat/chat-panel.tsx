@@ -1,0 +1,195 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { Send, Square, Sparkles, Eraser } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "sonner";
+import { MessageItem } from "@/components/chat/message-item";
+import { api } from "@/lib/api";
+import { useProjectStore } from "@/lib/store";
+
+const SUGGESTIONS = [
+  "帮我构思一个故事的开头",
+  "我们来设计主角的人物设定",
+  "帮我建立这个世界的基本规则",
+  "梳理一下目前角色的关系",
+];
+
+export function ChatPanel({ projectId }: { projectId: string }) {
+  const [input, setInput] = useState("");
+  const reloadStore = useProjectStore((s) => s.reload);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const initRef = useRef(false);
+  const savingRef = useRef(false);
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        body: { projectId },
+      }),
+    [projectId],
+  );
+
+  const { messages, sendMessage, status, stop, setMessages, error } =
+    useChat({ transport });
+
+  const busy = status === "streaming" || status === "submitted";
+
+  // 首次加载历史对话
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getChat(projectId)
+      .then((res) => {
+        if (!cancelled && Array.isArray(res.messages) && res.messages.length > 0) {
+          setMessages(res.messages as never[]);
+        }
+      })
+      .catch(() => {
+        /* 项目无历史或路由未就绪时静默处理 */
+      })
+      .finally(() => {
+        initRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, setMessages]);
+
+  // 当回复完成（status -> ready）时持久化并刷新资料库
+  useEffect(() => {
+    if (
+      status === "ready" &&
+      initRef.current &&
+      messages.length > 0 &&
+      !savingRef.current
+    ) {
+      savingRef.current = true;
+      Promise.all([
+        api.saveChat(projectId, messages as unknown[]),
+        reloadStore(),
+      ])
+        .catch(() => {})
+        .finally(() => {
+          savingRef.current = false;
+        });
+    }
+  }, [status, messages.length, projectId, messages, reloadStore]);
+
+  // 错误提示
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  function handleSubmit() {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    sendMessage({ text });
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }
+
+  async function handleClear() {
+    if (!confirm("清空所有对话历史？")) return;
+    await api.clearChat(projectId);
+    setMessages([]);
+    toast.success("已清空对话");
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* 头部 */}
+      <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <h1 className="font-semibold">AI 对话</h1>
+        </div>
+        {messages.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={handleClear}>
+            <Eraser className="mr-2 h-3.5 w-3.5" />
+            清空
+          </Button>
+        )}
+      </header>
+
+      {/* 消息区 */}
+      <ScrollArea ref={scrollRef} className="flex-1">
+        <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+          {messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-6 py-20 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-300">
+                <Sparkles className="h-7 w-7" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold">开始构建你的故事</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  与 AI 探讨世界观、人物、剧情，AI 会自动记录到资料库
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setInput(s)}
+                    className="rounded-full border bg-background px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((m) => <MessageItem key={m.id} message={m} />)
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* 输入区 */}
+      <div className="shrink-0 border-t bg-background p-4">
+        <div className="mx-auto flex max-w-3xl items-end gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="输入消息与 AI 交流…（Enter 发送，Shift+Enter 换行）"
+            rows={1}
+            className="max-h-40 min-h-[44px] resize-none"
+          />
+          {busy ? (
+            <Button onClick={stop} size="icon" variant="outline" className="h-11 w-11">
+              <Square className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              size="icon"
+              className="h-11 w-11"
+              disabled={!input.trim()}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
