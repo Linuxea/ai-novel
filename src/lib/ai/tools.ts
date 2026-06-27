@@ -24,7 +24,7 @@ export function buildTools(projectId: string) {
   return {
     upsert_character: tool({
       description:
-        "创建或更新一个角色。当对话中讨论到一个角色（新角色或已有角色的细节补充）时调用。更新已有角色时传 id 或同名字（将自动匹配）。",
+        "创建或更新一个角色。当对话中讨论到一个角色（新角色或已有角色的细节补充）时调用。更新已有角色时传 id 或同名时（将自动匹配）。",
       inputSchema: UpsertCharacterInputSchema,
       execute: async (input) => {
         const created = await storage.upsertCharacter(projectId, input);

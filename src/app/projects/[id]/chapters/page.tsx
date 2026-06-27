@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import Link from "next/link";
 import { Plus, Trash2, BookText, FileText, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -29,7 +30,14 @@ const STATUS_META: Record<ChapterStatus, { label: string; variant: "outline" | "
 
 export default function ChaptersPage() {
   const { project, chapters, upsertChapterLocal, removeChapterLocal } =
-    useProjectStore();
+    useProjectStore(
+      useShallow((s) => ({
+        project: s.project,
+        chapters: s.chapters,
+        upsertChapterLocal: s.upsertChapterLocal,
+        removeChapterLocal: s.removeChapterLocal,
+      })),
+    );
   const projectId = project?.id ?? "";
 
   const [dialogOpen, setDialogOpen] = useState(false);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,14 @@ export default function CharactersPage() {
 
 function CharactersContent() {
   const { project, characters, upsertCharacterLocal, removeCharacterLocal } =
-    useProjectStore();
+    useProjectStore(
+      useShallow((s) => ({
+        project: s.project,
+        characters: s.characters,
+        upsertCharacterLocal: s.upsertCharacterLocal,
+        removeCharacterLocal: s.removeCharacterLocal,
+      })),
+    );
   const projectId = project?.id ?? "";
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Character | null>(null);

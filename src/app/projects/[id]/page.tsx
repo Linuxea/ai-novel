@@ -1,5 +1,6 @@
 "use client";
 
+import { useShallow } from "zustand/react/shallow";
 import Link from "next/link";
 import {
   Users,
@@ -20,7 +21,15 @@ export default function OverviewPage() {
 
 function OverviewContent() {
   const { project, characters, worldbuilding, plot, chapters } =
-    useProjectStore();
+    useProjectStore(
+      useShallow((s) => ({
+        project: s.project,
+        characters: s.characters,
+        worldbuilding: s.worldbuilding,
+        plot: s.plot,
+        chapters: s.chapters,
+      })),
+    );
   const totalWords = chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
 
   const stats = [

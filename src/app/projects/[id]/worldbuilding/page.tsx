@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Globe } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,14 @@ const CATEGORIES = Object.entries(WORLD_CATEGORY_LABEL) as [
 
 export default function WorldbuildingPage() {
   const { project, worldbuilding, upsertWorldLocal, removeWorldLocal } =
-    useProjectStore();
+    useProjectStore(
+      useShallow((s) => ({
+        project: s.project,
+        worldbuilding: s.worldbuilding,
+        upsertWorldLocal: s.upsertWorldLocal,
+        removeWorldLocal: s.removeWorldLocal,
+      })),
+    );
   const projectId = project?.id ?? "";
 
   const [dialogOpen, setDialogOpen] = useState(false);

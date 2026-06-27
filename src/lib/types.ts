@@ -144,12 +144,17 @@ export interface ProjectData {
 }
 
 /** AI 工具入参 schema（供 tools.ts 复用） */
-export const UpsertCharacterInputSchema = CharacterSchema.omit({
-  id: true,
-  relationships: true,
-  layoutPosition: true,
-}).extend({
+export const UpsertCharacterInputSchema = z.object({
   id: z.string().optional().describe("更新现有角色时传入其 id；新建则留空"),
+  name: z.string(),
+  role: z.string().optional().describe("角色定位，如 主角/反派/配角"),
+  aliases: z.array(z.string()).optional(),
+  appearance: z.string().optional(),
+  personality: z.string().optional(),
+  background: z.string().optional(),
+  goals: z.string().optional(),
+  abilities: z.string().optional(),
+  notes: z.string().optional(),
 });
 export type UpsertCharacterInput = z.infer<typeof UpsertCharacterInputSchema>;
 

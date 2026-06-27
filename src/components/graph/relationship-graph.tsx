@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -53,7 +54,9 @@ function circleLayout(count: number, radius = 220) {
 }
 
 export function RelationshipGraph({ projectId }: { projectId: string }) {
-  const { characters, reload } = useProjectStore();
+  const { characters, reload } = useProjectStore(
+    useShallow((s) => ({ characters: s.characters, reload: s.reload })),
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [dialogOpen, setDialogOpen] = useState(false);

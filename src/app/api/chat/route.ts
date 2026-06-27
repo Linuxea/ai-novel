@@ -33,16 +33,27 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "项目不存在" }, { status: 404 });
   }
 
-  const data = (await getProjectData(projectId))!;
+  const data = await getProjectData(projectId);
+  if (!data) {
+    return Response.json({ error: "项目数据读取失败" }, { status: 404 });
+  }
 
-  const result = streamText({
-    model: getModel(project.aiModel || undefined),
-    system: buildSystemPrompt(data),
-    temperature: project.temperature ?? 0.8,
-    messages: await convertToModelMessages(messages),
-    tools: buildTools(projectId),
-    stopWhen: stepCountIs(6),
-  });
+  let result;
+  try {
+    result = streamText({
+      model: getModel(project.aiModel || undefined),
+      system: buildSystemPrompt(data),
+      temperature: project.temperature ?? 0.8,
+      messages: await convertToModelMessages(messages),
+      tools: buildTools(projectId),
+      stopWhen: stepCountIs(6),
+    });
+  } catch (e) {
+    return Response.json(
+      { error: `模型初始化失败：${(e as Error).message}` },
+      { status: 500 },
+    );
+  }
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({ sendReasoning: true });
 }

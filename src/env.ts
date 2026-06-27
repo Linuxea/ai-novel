@@ -1,3 +1,5 @@
+import "server-only";
+
 /** 服务端环境变量（仅在 route handler / server 端使用） */
 
 function getEnv(key: string, fallback = ""): string {

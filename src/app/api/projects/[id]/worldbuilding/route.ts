@@ -11,7 +11,25 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const body = await req.json().catch(() => ({}));
-  const section = await upsertWorldSection(id, body);
-  return NextResponse.json({ section }, { status: 201 });
+  const body = await req.json().catch(() => null);
+  if (
+    !body ||
+    typeof body.title !== "string" ||
+    !body.title.trim() ||
+    typeof body.category !== "string"
+  ) {
+    return NextResponse.json(
+      { error: "缺少必填字段 title / category" },
+      { status: 400 },
+    );
+  }
+  try {
+    const section = await upsertWorldSection(id, body);
+    return NextResponse.json({ section }, { status: 201 });
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
 }

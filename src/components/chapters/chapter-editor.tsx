@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -23,6 +24,8 @@ import { useProjectStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { ChapterStatus } from "@/lib/types";
 
+const REMARK_PLUGINS = [remarkGfm];
+
 export function ChapterEditor({
   projectId,
   chapterId,
@@ -30,7 +33,12 @@ export function ChapterEditor({
   projectId: string;
   chapterId: string;
 }) {
-  const { chapters, upsertChapterLocal } = useProjectStore();
+  const { chapters, upsertChapterLocal } = useProjectStore(
+    useShallow((s) => ({
+      chapters: s.chapters,
+      upsertChapterLocal: s.upsertChapterLocal,
+    })),
+  );
   const chapter = chapters.find((c) => c.id === chapterId);
 
   const [content, setContent] = useState("");
@@ -43,11 +51,24 @@ export function ChapterEditor({
 
   // 加载章节内容
   useEffect(() => {
-    api.getChapterContent(projectId, chapterId).then((res) => {
-      setContent(res.content || "");
-      setLoaded(true);
-    });
+    api
+      .getChapterContent(projectId, chapterId)
+      .then((res) => {
+        setContent(res.content || "");
+        setLoaded(true);
+      })
+      .catch((e) => {
+        toast.error((e as Error).message);
+        setLoaded(true);
+      });
   }, [projectId, chapterId]);
+
+  // 卸载时中止在途的 AI 生成
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   function handleChange(v: string) {
     setContent(v);
@@ -152,6 +173,11 @@ export function ChapterEditor({
     }
   }
 
+  const wordCount = useMemo(
+    () => content.replace(/\s+/g, "").length,
+    [content],
+  );
+
   if (!chapter) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -159,8 +185,6 @@ export function ChapterEditor({
       </div>
     );
   }
-
-  const wordCount = content.replace(/\s+/g, "").length;
 
   return (
     <div className="flex h-full flex-col">
@@ -282,7 +306,7 @@ export function ChapterEditor({
             <div className="px-[15%] py-8">
               {content.trim() ? (
                 <div className="prose prose-lg max-w-none whitespace-pre-wrap font-serif leading-loose dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
                     {content}
                   </ReactMarkdown>
                 </div>

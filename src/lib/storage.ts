@@ -22,12 +22,25 @@ export function projectsDir(): string {
   return path.join(rootDir(), "projects");
 }
 
+/** 校验 ID 仅含 nanoid 字符集，防止 `..`/`/` 等路径穿越。 */
+function assertSafeId(id: string): void {
+  if (!id || !/^[\w-]+$/.test(id)) {
+    throw new Error(`非法 ID: ${JSON.stringify(id)}`);
+  }
+}
+
 export function projectDir(projectId: string): string {
+  assertSafeId(projectId);
   return path.join(projectsDir(), projectId);
 }
 
 function chaptersDir(projectId: string): string {
   return path.join(projectDir(projectId), "chapters");
+}
+
+function chapterFilePath(projectId: string, chapterId: string): string {
+  assertSafeId(chapterId);
+  return path.join(chaptersDir(projectId), `${chapterId}.md`);
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -183,9 +196,13 @@ export async function upsertCharacter(
     : list.find((c) => c.name === input.name);
 
   if (existing) {
+    // 仅覆盖 input 中已定义的字段，避免未传字段（undefined）清空已有数据
+    const patch = Object.fromEntries(
+      Object.entries(input).filter(([, v]) => v !== undefined),
+    );
     const updated: Character = {
       ...existing,
-      ...input,
+      ...patch,
       id: existing.id,
       name: input.name ?? existing.name,
       relationships: existing.relationships ?? [],
@@ -457,7 +474,7 @@ export async function deleteChapter(
     "chapters.json",
     list.filter((c) => c.id !== chapterId),
   );
-  const file = path.join(chaptersDir(projectId), `${chapterId}.md`);
+  const file = chapterFilePath(projectId, chapterId);
   if (await fileExists(file)) await fs.unlink(file);
   await touchProject(projectId);
 }
@@ -466,7 +483,7 @@ export async function readChapterContent(
   projectId: string,
   chapterId: string,
 ): Promise<string> {
-  const file = path.join(chaptersDir(projectId), `${chapterId}.md`);
+  const file = chapterFilePath(projectId, chapterId);
   if (!(await fileExists(file))) return "";
   return fs.readFile(file, "utf-8");
 }
@@ -477,7 +494,7 @@ export async function writeChapterContent(
   content: string,
 ): Promise<void> {
   await ensureDir(chaptersDir(projectId));
-  const file = path.join(chaptersDir(projectId), `${chapterId}.md`);
+  const file = chapterFilePath(projectId, chapterId);
   await fs.writeFile(file, content, "utf-8");
   // 更新字数
   const list = await listChapters(projectId);

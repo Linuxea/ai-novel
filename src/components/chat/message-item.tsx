@@ -1,10 +1,13 @@
 "use client";
 
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Loader2, Wrench } from "lucide-react";
+import { Brain, Check, Loader2, Wrench } from "lucide-react";
 import type { UIMessage } from "ai";
 import { cn } from "@/lib/utils";
+
+const REMARK_PLUGINS = [remarkGfm];
 
 const TOOL_LABELS: Record<string, string> = {
   "tool-upsert_character": "创建/更新角色",
@@ -16,7 +19,11 @@ const TOOL_LABELS: Record<string, string> = {
   "tool-list_relationship_types": "查询关系类型",
 };
 
-export function MessageItem({ message }: { message: UIMessage }) {
+export const MessageItem = React.memo(function MessageItem({
+  message,
+}: {
+  message: UIMessage;
+}) {
   const isUser = message.role === "user";
 
   return (
@@ -40,6 +47,18 @@ export function MessageItem({ message }: { message: UIMessage }) {
         {message.parts.map((part, i) => {
           const key = `${message.id}-${i}`;
 
+          if (part.type === "reasoning") {
+            const text = part.text?.trim();
+            if (!text) return null;
+            return (
+              <ReasoningDetails
+                key={key}
+                text={text}
+                streaming={part.state === "streaming"}
+              />
+            );
+          }
+
           if (part.type === "text" && part.text.trim()) {
             return (
               <div
@@ -55,7 +74,7 @@ export function MessageItem({ message }: { message: UIMessage }) {
                   <span className="whitespace-pre-wrap">{part.text}</span>
                 ) : (
                   <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
                       {part.text}
                     </ReactMarkdown>
                   </div>
@@ -101,5 +120,32 @@ export function MessageItem({ message }: { message: UIMessage }) {
         })}
       </div>
     </div>
+  );
+});
+
+function ReasoningDetails({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      className="self-start rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+    >
+      <summary className="flex cursor-pointer items-center gap-1.5 font-medium select-none">
+        {streaming ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Brain className="h-3 w-3" />
+        )}
+        思考过程
+      </summary>
+      <div className="mt-2 whitespace-pre-wrap leading-relaxed">{text}</div>
+    </details>
   );
 }

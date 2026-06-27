@@ -32,7 +32,10 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "项目不存在" }, { status: 404 });
   }
 
-  const data = (await getProjectData(id))!;
+  const data = await getProjectData(id);
+  if (!data) {
+    return NextResponse.json({ error: "项目数据读取失败" }, { status: 404 });
+  }
   const chapters = await listChapters(id);
   const chapter = chapters.find((c) => c.id === chapterId);
   if (!chapter) {
@@ -41,12 +44,20 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
   const existing = await readChapterContent(id, chapterId);
 
-  const result = streamText({
-    model: getModel(project.aiModel || undefined),
-    system: buildWriterPrompt(data, chapter, existing, chapters),
-    temperature: project.temperature ?? 0.85,
-    prompt: "请开始撰写本章正文。",
-  });
+  let result;
+  try {
+    result = streamText({
+      model: getModel(project.aiModel || undefined),
+      system: buildWriterPrompt(data, chapter, existing, chapters),
+      temperature: project.temperature ?? 0.85,
+      prompt: "请开始撰写本章正文。",
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: `模型初始化失败：${(e as Error).message}` },
+      { status: 500 },
+    );
+  }
 
   return result.toTextStreamResponse();
 }

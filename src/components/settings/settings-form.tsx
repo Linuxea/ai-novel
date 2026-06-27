@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +44,7 @@ function SettingsFormInner({
   project: Project;
   defaultModel: string;
 }) {
-  const { load } = useProjectStore();
+  const load = useProjectStore(useShallow((s) => s.load));
   const projectId = project.id;
   const [form, setForm] = useState({
     title: project.title,

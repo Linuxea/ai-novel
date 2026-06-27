@@ -41,7 +41,7 @@ async function addDirToZip(
     const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       await addDirToZip(zip, abs, rel);
-    } else {
+    } else if (!entry.name.endsWith(".tmp")) {
       const content = await fs.readFile(abs);
       zip.file(rel, content);
     }

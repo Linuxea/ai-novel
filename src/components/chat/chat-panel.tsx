@@ -6,7 +6,6 @@ import { DefaultChatTransport } from "ai";
 import { Send, Square, Sparkles, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { MessageItem } from "@/components/chat/message-item";
 import { api } from "@/lib/api";
@@ -23,6 +22,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const [input, setInput] = useState("");
   const reloadStore = useProjectStore((s) => s.reload);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
   const initRef = useRef(false);
   const savingRef = useRef(false);
 
@@ -86,13 +86,20 @@ export function ChatPanel({ projectId }: { projectId: string }) {
     if (error) toast.error(error.message);
   }, [error]);
 
-  // 自动滚动到底部
+  // 自动滚动到底部（仅在用户已贴底时跟随，避免打断向上翻看）
   useEffect(() => {
-    const el = scrollRef.current?.querySelector(
-      "[data-radix-scroll-area-viewport]",
-    );
-    if (el) el.scrollTop = el.scrollHeight;
+    const el = scrollRef.current;
+    if (el && stickRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }
 
   function handleSubmit() {
     const text = input.trim();
@@ -132,7 +139,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
       </header>
 
       {/* 消息区 */}
-      <ScrollArea ref={scrollRef} className="flex-1">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto"
+      >
         <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-6 py-20 text-center">
@@ -161,7 +172,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             messages.map((m) => <MessageItem key={m.id} message={m} />)
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* 输入区 */}
       <div className="shrink-0 border-t bg-background p-4">

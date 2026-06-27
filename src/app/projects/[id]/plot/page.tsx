@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, ScrollText } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,14 @@ import type { PlotPoint } from "@/lib/types";
 
 export default function PlotPage() {
   const { project, plot, upsertPlotLocal, removePlotLocal } =
-    useProjectStore();
+    useProjectStore(
+      useShallow((s) => ({
+        project: s.project,
+        plot: s.plot,
+        upsertPlotLocal: s.upsertPlotLocal,
+        removePlotLocal: s.removePlotLocal,
+      })),
+    );
   const projectId = project?.id ?? "";
 
   const [dialogOpen, setDialogOpen] = useState(false);
