@@ -1,5 +1,5 @@
 import "server-only";
-import type { Chapter, Character, ProjectData } from "@/lib/types";
+import type { Chapter, Character, Project, ProjectData } from "@/lib/types";
 import {
   PLOT_STATUS_LABEL,
   PLOT_TYPE_META,
@@ -162,3 +162,24 @@ ${
 }
 
 export { PREV_CONTENT_TAIL_LIMIT };
+
+/**
+ * 构建「从正文同步大纲」的提示词：让 AI 阅读章节正文，提炼一段简洁梗概作为大纲。
+ */
+export function buildOutlineFromContentPrompt(
+  project: Pick<Project, "title" | "genre">,
+  chapter: Pick<Chapter, "order" | "title">,
+): string {
+  return `你是一位资深小说编辑，正在为《${project.title}》（${project.genre}）整理第${chapter.order}章《${chapter.title}》的大纲。
+
+# 任务
+阅读下面给出的章节正文，提炼一段**简洁梗概**作为本章大纲，概括本章实际发生的关键内容：
+- 核心事件、转折、人物的关键行动与决定
+- 约 50-100 字，一两句话即可
+
+# 要求
+1. **严格基于正文实际内容**概括，不要臆造或补足未发生的情节。
+2. 只输出大纲文本本身——不要加章节标题、编号、引号、"大纲："等任何前后缀或解释。
+3. 用流畅的中文。`;
+}
+

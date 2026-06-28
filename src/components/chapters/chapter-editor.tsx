@@ -12,6 +12,7 @@ import {
   Square,
   CheckCircle2,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -55,6 +56,7 @@ export function ChapterEditor({
   const [outlineEditing, setOutlineEditing] = useState(false);
   const [outlineDraft, setOutlineDraft] = useState("");
   const [outlineSaving, setOutlineSaving] = useState(false);
+  const [outlineSyncing, setOutlineSyncing] = useState(false);
 
   // 备注内联编辑
   const [notesEditing, setNotesEditing] = useState(false);
@@ -210,6 +212,39 @@ export function ChapterEditor({
     }
   }
 
+  async function handleSyncOutline() {
+    if (!chapter) return;
+    if (!content.trim()) {
+      toast.error("正文为空，无法同步");
+      return;
+    }
+    if (
+      chapter.outline?.trim() &&
+      !confirm("将根据当前正文重新生成大纲，覆盖现有大纲？")
+    ) {
+      return;
+    }
+    setOutlineSyncing(true);
+    try {
+      const { outline } = await api.syncOutline(projectId, chapterId);
+      if (!outline) {
+        toast.warning("未能生成大纲，请稍后重试");
+        return;
+      }
+      const { chapter: updated } = await api.updateChapter(
+        projectId,
+        chapterId,
+        { outline },
+      );
+      upsertChapterLocal(updated);
+      toast.success("大纲已从正文同步");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setOutlineSyncing(false);
+    }
+  }
+
   async function toggleCharacter(id: string) {
     if (!chapter) return;
     const current = chapter.characterIds ?? [];
@@ -359,15 +394,32 @@ export function ChapterEditor({
                 <span className="italic">（暂无，点击右侧编辑添加）</span>
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 shrink-0 px-2 text-xs"
-              onClick={startOutlineEdit}
-            >
-              <Pencil className="mr-1 h-3 w-3" />
-              编辑大纲
-            </Button>
+            <div className="flex shrink-0 gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={handleSyncOutline}
+                disabled={outlineSyncing || generating || !content.trim()}
+                title="根据当前正文让 AI 重新生成本章大纲"
+              >
+                {outlineSyncing ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-3 w-3" />
+                )}
+                从正文同步
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={startOutlineEdit}
+              >
+                <Pencil className="mr-1 h-3 w-3" />
+                编辑大纲
+              </Button>
+            </div>
           </div>
         )}
       </div>

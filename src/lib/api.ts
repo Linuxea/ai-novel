@@ -140,6 +140,11 @@ export const api = {
       method: "PUT",
       body: body({ content }),
     }),
+  syncOutline: (id: string, chapterId: string) =>
+    req<{ outline: string }>(
+      `/api/projects/${id}/chapters/${chapterId}/sync-outline`,
+      { method: "POST" },
+    ),
 
   /** 对话历史 */
   getChat: (id: string) =>
