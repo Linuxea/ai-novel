@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteProject, getProject, getProjectData, updateProject } from "@/lib/storage";
+import { deleteProject, getProject, updateProject } from "@/lib/storage";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -30,14 +30,4 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   await deleteProject(id);
   return NextResponse.json({ success: true });
-}
-
-/** 获取项目完整数据（聚合） */
-export async function PUT(_req: NextRequest, { params }: Params) {
-  const { id } = await params;
-  const data = await getProjectData(id);
-  if (!data) {
-    return NextResponse.json({ error: "项目不存在" }, { status: 404 });
-  }
-  return NextResponse.json(data);
 }

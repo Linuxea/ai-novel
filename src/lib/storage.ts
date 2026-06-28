@@ -168,6 +168,13 @@ export async function deleteProject(projectId: string): Promise<void> {
   }
 }
 
+/** 过滤掉值为 undefined 的字段，用于部分更新（避免未传字段覆盖已有数据） */
+function definedFields<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
+}
+
 /** ===== 通用资源读写 ===== */
 async function readList<T>(projectId: string, file: string): Promise<T[]> {
   return readJson<T[]>(path.join(projectDir(projectId), file), []);
@@ -197,9 +204,7 @@ export async function upsertCharacter(
 
   if (existing) {
     // 仅覆盖 input 中已定义的字段，避免未传字段（undefined）清空已有数据
-    const patch = Object.fromEntries(
-      Object.entries(input).filter(([, v]) => v !== undefined),
-    );
+    const patch = definedFields(input);
     const updated: Character = {
       ...existing,
       ...patch,
@@ -278,14 +283,21 @@ export async function upsertRelationship(
   const list = await listCharacters(projectId);
   const owner = list.find((c) => c.id === characterId);
   if (!owner) return null;
-  const target = list.find(
+  const matches = list.filter(
     (c) =>
       c.name === input.targetName ||
       (c.aliases && c.aliases.includes(input.targetName)),
   );
-  if (!target) {
+  if (matches.length === 0) {
     throw new Error(`未找到名为「${input.targetName}」的角色`);
   }
+  if (matches.length > 1) {
+    const names = matches.map((c) => `${c.name}(${c.id})`).join("、");
+    throw new Error(
+      `「${input.targetName}」匹配到多个角色：${names}，请使用角色 id 精确指定`,
+    );
+  }
+  const target = matches[0];
   if (target.id === characterId) return owner;
 
   const relationships = owner.relationships ?? [];
@@ -343,7 +355,7 @@ export async function upsertWorldSection(
   if (existing) {
     const updated: WorldSection = {
       ...existing,
-      ...input,
+      ...definedFields(input),
       id: existing.id,
       updatedAt: now(),
     };
@@ -392,7 +404,7 @@ export async function upsertPlotPoint(
   const list = await listPlotPoints(projectId);
   const existing = input.id ? list.find((p) => p.id === input.id) : undefined;
   if (existing) {
-    const updated: PlotPoint = { ...existing, ...input, id: existing.id };
+    const updated: PlotPoint = { ...existing, ...definedFields(input), id: existing.id };
     const next = list.map((p) => (p.id === existing.id ? updated : p));
     await writeList(projectId, "plot.json", next);
     await touchProject(projectId);
@@ -440,7 +452,7 @@ export async function upsertChapter(
   if (existing) {
     const updated: Chapter = {
       ...existing,
-      ...input,
+      ...definedFields(input),
       id: existing.id,
       updatedAt: now(),
     };

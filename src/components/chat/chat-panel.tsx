@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Send, Square, Sparkles, Eraser } from "lucide-react";
@@ -25,6 +25,8 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const stickRef = useRef(true);
   const initRef = useRef(false);
   const savingRef = useRef(false);
+  const pendingRef = useRef(false);
+  const messagesRef = useRef<unknown[]>([]);
 
   const transport = useMemo(
     () =>
@@ -37,6 +39,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
   const { messages, sendMessage, status, stop, setMessages, error } =
     useChat({ transport });
+  messagesRef.current = messages;
 
   const busy = status === "streaming" || status === "submitted";
 
@@ -62,24 +65,32 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   }, [projectId, setMessages]);
 
   // 当回复完成（status -> ready）时持久化并刷新资料库
-  useEffect(() => {
-    if (
-      status === "ready" &&
-      initRef.current &&
-      messages.length > 0 &&
-      !savingRef.current
-    ) {
-      savingRef.current = true;
-      Promise.all([
-        api.saveChat(projectId, messages as unknown[]),
-        reloadStore(),
-      ])
-        .catch(() => {})
-        .finally(() => {
-          savingRef.current = false;
-        });
+  const doSave = useCallback(() => {
+    if (savingRef.current) {
+      pendingRef.current = true;
+      return;
     }
-  }, [status, messages.length, projectId, messages, reloadStore]);
+    savingRef.current = true;
+    const snapshot = messagesRef.current;
+    Promise.all([
+      api.saveChat(projectId, snapshot as unknown[]),
+      reloadStore(),
+    ])
+      .catch(() => {})
+      .finally(() => {
+        savingRef.current = false;
+        if (pendingRef.current) {
+          pendingRef.current = false;
+          doSave();
+        }
+      });
+  }, [projectId, reloadStore]);
+
+  useEffect(() => {
+    if (status === "ready" && initRef.current && messages.length > 0) {
+      doSave();
+    }
+  }, [status, messages.length, messages, doSave]);
 
   // 错误提示
   useEffect(() => {

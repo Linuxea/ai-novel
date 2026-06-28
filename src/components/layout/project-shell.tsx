@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { BookOpen, ArrowLeft } from "lucide-react";
+import { BookOpen, ArrowLeft, AlertCircle } from "lucide-react";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { useProjectStore } from "@/lib/store";
 
@@ -15,10 +15,28 @@ export function ProjectShell({
 }) {
   const load = useProjectStore((s) => s.load);
   const project = useProjectStore((s) => s.project);
+  const error = useProjectStore((s) => s.error);
 
   useEffect(() => {
     load(projectId);
   }, [projectId, load]);
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center p-6">
+        <div className="max-w-md space-y-4 text-center">
+          <AlertCircle className="mx-auto h-10 w-10 text-destructive" />
+          <div>
+            <p className="font-semibold">数据加载失败</p>
+            <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+          </div>
+          <Link href="/" className="text-sm text-primary hover:underline">
+            返回作品列表
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

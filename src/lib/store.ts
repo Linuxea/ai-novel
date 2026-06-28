@@ -18,6 +18,7 @@ interface ProjectState {
   plot: PlotPoint[];
   chapters: Chapter[];
   loading: boolean;
+  error: string | null;
 
   load: (projectId: string) => Promise<void>;
   reload: () => Promise<void>;
@@ -42,9 +43,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   plot: [],
   chapters: [],
   loading: false,
+  error: null,
 
   load: async (projectId) => {
-    set({ projectId, loading: true });
+    set({ projectId, loading: true, error: null });
     try {
       const data = await api.getProjectData(projectId);
       set({
@@ -54,9 +56,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         plot: data.plot,
         chapters: data.chapters,
         loading: false,
+        error: null,
       });
-    } catch {
-      set({ loading: false });
+    } catch (e) {
+      set({ loading: false, error: (e as Error).message });
     }
   },
 
@@ -73,6 +76,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       worldbuilding: [],
       plot: [],
       chapters: [],
+      error: null,
     }),
 
   upsertCharacterLocal: (c) =>

@@ -119,6 +119,7 @@ export function ChapterEditor({
       }
       setContent("");
     }
+    abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     try {
