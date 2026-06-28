@@ -14,7 +14,6 @@ const TOOL_LABELS: Record<string, string> = {
   "tool-delete_character": "删除角色",
   "tool-upsert_relationship": "设定关系",
   "tool-upsert_world_section": "记录世界观",
-  "tool-upsert_plot_point": "记录剧情",
   "tool-create_chapter_outline": "创建章节",
   "tool-list_relationship_types": "查询关系类型",
 };

@@ -1,7 +1,7 @@
 import type {
   Chapter,
   Character,
-  PlotPoint,
+  PlotNote,
   Project,
   WorldSection,
 } from "@/lib/types";
@@ -38,7 +38,7 @@ export const api = {
       project: Project;
       worldbuilding: WorldSection[];
       characters: Character[];
-      plot: PlotPoint[];
+      plotNotes: PlotNote[];
       chapters: Chapter[];
     }>(`/api/projects/${id}/data`),
   updateProject: (id: string, patch: Partial<Project>) =>
@@ -100,21 +100,21 @@ export const api = {
       method: "DELETE",
     }),
 
-  /** 剧情 */
-  listPlot: (id: string) =>
-    req<{ plot: PlotPoint[] }>(`/api/projects/${id}/plot`),
-  upsertPlot: (id: string, data: Partial<PlotPoint>) =>
-    req<{ plot: PlotPoint }>(`/api/projects/${id}/plot`, {
+  /** 剧情规划 */
+  listPlanning: (id: string) =>
+    req<{ notes: PlotNote[] }>(`/api/projects/${id}/planning`),
+  upsertPlanning: (id: string, data: Partial<PlotNote>) =>
+    req<{ note: PlotNote }>(`/api/projects/${id}/planning`, {
       method: "POST",
       body: body(data),
     }),
-  updatePlot: (id: string, plotId: string, patch: Partial<PlotPoint>) =>
-    req<{ plot: PlotPoint }>(`/api/projects/${id}/plot/${plotId}`, {
-      method: "PATCH",
-      body: body(patch),
-    }),
-  deletePlot: (id: string, plotId: string) =>
-    req(`/api/projects/${id}/plot/${plotId}`, { method: "DELETE" }),
+  updatePlanning: (id: string, noteId: string, patch: Partial<PlotNote>) =>
+    req<{ note: PlotNote }>(
+      `/api/projects/${id}/planning/${noteId}`,
+      { method: "PATCH", body: body(patch) },
+    ),
+  deletePlanning: (id: string, noteId: string) =>
+    req(`/api/projects/${id}/planning/${noteId}`, { method: "DELETE" }),
 
   /** 章节 */
   listChapters: (id: string) =>

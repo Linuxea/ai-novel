@@ -27,6 +27,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const savingRef = useRef(false);
   const pendingRef = useRef(false);
   const messagesRef = useRef<unknown[]>([]);
+  const saveImplRef = useRef<() => void>(() => {});
 
   const transport = useMemo(
     () =>
@@ -39,7 +40,6 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
   const { messages, sendMessage, status, stop, setMessages, error } =
     useChat({ transport });
-  messagesRef.current = messages;
 
   const busy = status === "streaming" || status === "submitted";
 
@@ -64,6 +64,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
     };
   }, [projectId, setMessages]);
 
+  // 保持 messagesRef 为最新（供保存时快照，须在保存触发前同步）
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // 当回复完成（status -> ready）时持久化并刷新资料库
   const doSave = useCallback(() => {
     if (savingRef.current) {
@@ -81,10 +86,16 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         savingRef.current = false;
         if (pendingRef.current) {
           pendingRef.current = false;
-          doSave();
+          // 经 ref 调用最新的 doSave，避免自引用
+          saveImplRef.current();
         }
       });
   }, [projectId, reloadStore]);
+
+  // 让递归重试始终调用最新的 doSave
+  useEffect(() => {
+    saveImplRef.current = doSave;
+  }, [doSave]);
 
   useEffect(() => {
     if (status === "ready" && initRef.current && messages.length > 0) {

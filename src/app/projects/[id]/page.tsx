@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   Users,
   Globe,
-  ScrollText,
   BookText,
   MessagesSquare,
   GitFork,
@@ -20,13 +19,12 @@ export default function OverviewPage() {
 }
 
 function OverviewContent() {
-  const { project, characters, worldbuilding, plot, chapters } =
+  const { project, characters, worldbuilding, chapters } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
         characters: s.characters,
         worldbuilding: s.worldbuilding,
-        plot: s.plot,
         chapters: s.chapters,
       })),
     );
@@ -40,7 +38,6 @@ function OverviewContent() {
       icon: Globe,
       href: "worldbuilding",
     },
-    { label: "剧情节点", value: plot.length, icon: ScrollText, href: "plot" },
     { label: "章节", value: chapters.length, icon: BookText, href: "chapters" },
   ];
 

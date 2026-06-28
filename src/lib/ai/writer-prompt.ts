@@ -1,6 +1,8 @@
 import "server-only";
 import type { Chapter, Character, ProjectData } from "@/lib/types";
 import {
+  PLOT_STATUS_LABEL,
+  PLOT_TYPE_META,
   RELATIONSHIP_META,
   WORLD_CATEGORY_LABEL,
 } from "@/lib/types";
@@ -58,7 +60,7 @@ export function buildWriterPrompt(
   chapters: Chapter[],
   prevContexts: PrevChapterContext[],
 ): string {
-  const { project, characters, worldbuilding, plot } = data;
+  const { project, characters, worldbuilding, plotNotes } = data;
 
   // 角色关系解析所需的 id → name 映射
   const nameById = new Map<string, string>(
@@ -78,16 +80,32 @@ export function buildWriterPrompt(
         .join("\n")
     : "（暂无）";
 
-  const plotBlock = plot.length
-    ? plot
+  const arcBlock = chapters.length
+    ? chapters
         .slice()
-        .sort((a, b) => a.act - b.act || a.order - b.order)
+        .sort((a, b) => a.order - b.order)
         .map(
-          (p) =>
-            `- 第${p.act}幕 · ${p.title}：${p.summary || "（无摘要）"}`,
+          (c) => `- 第${c.order}章《${c.title}》：${c.outline || "（无大纲）"}`,
         )
         .join("\n")
-    : "（暂无剧情节点）";
+    : "（暂无已规划章节）";
+
+  const pendingPlot = (plotNotes ?? []).filter((p) => p.status !== "resolved");
+  const resolvedPlot = (plotNotes ?? []).filter((p) => p.status === "resolved");
+  const plotBlock = pendingPlot.length
+    ? pendingPlot
+        .map((p) => {
+          const typeLabel = PLOT_TYPE_META[p.type]?.label ?? p.type;
+          const statusLabel = PLOT_STATUS_LABEL[p.status];
+          return `- [${typeLabel}·${statusLabel}] ${p.title}：${p.content || "（无详情）"}`;
+        })
+        .join("\n")
+    : "";
+  const resolvedHint = resolvedPlot.length
+    ? `\n（已收束、无需再埋：${resolvedPlot
+        .map((p) => p.title)
+        .join("、")}）`
+    : "";
 
   const prevBlock = prevContexts.length
     ? prevContexts
@@ -116,21 +134,24 @@ ${worldBlock}
 # 角色
 ${charBlock}
 
-# 整体剧情走向（按幕组织）
-${plotBlock}
+# 已规划章节（整体走向）
+${arcBlock}
+
+# 剧情规划（写作参照：留意埋设与回收）
+${plotBlock || "（暂无待埋/待收的剧情线）"}${resolvedHint}
 
 # 前文（最近章节的大纲与正文节选）
 ${prevBlock}
 
 # 当前任务
 撰写 第${chapter.order}章《${chapter.title}》。
-本章大纲：${chapter.outline || "（无大纲，请根据前文与剧情走向合理展开）"}
+本章大纲：${chapter.outline || "（无大纲，请根据前文与已规划章节合理展开）"}
 
 # 写作要求
 1. 用流畅、有画面感的中文小说笔法，注重场景、动作、对话与心理的平衡。
 2. 严格遵循「角色」中的人物性格、说话方式、背景、目标与关系；角色之间的互动基调必须与设定一致。
 3. 与「前文」中已发生的事件、人物状态、已说过的台词、已出现的物品保持连贯，不得矛盾或重复（例如已死之人不可复活、已交付的信物不可再次出现）。
-4. 推进「整体剧情走向」中本章应覆盖的剧情节点，注意埋设与回收伏笔。
+4. 推进「本章大纲」中规划的内容，注意埋设与回收伏笔。参照「剧情规划」中标记为构想中/进行中的伏笔与故事线自然地埋设铺垫；不要重复「已收束」的线索。
 5. 节奏自然，避免说教和流水账。
 6. 直接输出正文，不要加章节标题、不要解释、不要任何前言后语。
 ${

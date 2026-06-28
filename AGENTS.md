@@ -38,7 +38,7 @@ Verify order before considering work done: **lint → typecheck → build**. All
 ## Architecture
 
 - **Next.js App Router**, all under `src/app`. API routes in `src/app/api/**`, pages in `src/app/projects/[id]/**`.
-- **AI writes data via function calling**, not JSON-in-text. `src/lib/ai/tools.ts` defines tools (`upsert_character`, `upsert_relationship`, `upsert_world_section`, `upsert_plot_point`, `create_chapter_outline`) whose `execute` write to the file system. `src/app/api/chat/route.ts` streams via `streamText` + `toUIMessageStreamResponse()`. Chapter prose uses a separate text stream at `chapters/[chapterId]/generate` (`toTextStreamResponse()`).
+- **AI writes data via function calling**, not JSON-in-text. `src/lib/ai/tools.ts` defines tools (`upsert_character`, `upsert_relationship`, `upsert_world_section`, `create_chapter_outline`) whose `execute` write to the file system. `src/app/api/chat/route.ts` streams via `streamText` + `toUIMessageStreamResponse()`. Chapter prose uses a separate text stream at `chapters/[chapterId]/generate` (`toTextStreamResponse()`).
 - **Storage is local files**, server-only. `src/lib/storage.ts` (guarded by `server-only`) reads/writes `data/projects/<id>/` (JSON for structured data, `chapters/*.md` for prose). Writes are atomic (temp file + rename). Never import storage into client components.
 - **Client state**: Zustand store in `src/lib/store.ts` holds the active project's data; pages mutate via the `*Local` helpers then call `reload()`. `src/lib/api.ts` is the typed REST client.
 - **shadcn Button is Base-UI-based** and has **no `asChild`**. To render a button as a link, apply `buttonVariants({ variant })` as className on `<Link>`.

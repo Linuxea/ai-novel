@@ -68,4 +68,4 @@ npm run lint     # 代码检查
 
 ## 工作原理
 
-AI 在对话中通过 **function calling** 调用工具（`upsert_character` / `upsert_relationship` / `upsert_world_section` / `upsert_plot_point` / `create_chapter_outline`），在自然交流的同时把设定写入资料库——而非让 AI 输出 JSON 文本再解析。章节正文生成使用独立的流式纯文本端点，注入世界观、角色、前文作为上下文。
+AI 在对话中通过 **function calling** 调用工具（`upsert_character` / `upsert_relationship` / `upsert_world_section` / `create_chapter_outline`），在自然交流的同时把设定写入资料库——而非让 AI 输出 JSON 文本再解析。章节正文生成使用独立的流式纯文本端点，注入世界观、角色、前文作为上下文。

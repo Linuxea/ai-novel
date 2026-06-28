@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import type {
   Chapter,
   Character,
-  PlotPoint,
+  PlotNote,
   Project,
   WorldSection,
 } from "@/lib/types";
@@ -15,7 +15,7 @@ interface ProjectState {
   project: Project | null;
   characters: Character[];
   worldbuilding: WorldSection[];
-  plot: PlotPoint[];
+  plotNotes: PlotNote[];
   chapters: Chapter[];
   loading: boolean;
   error: string | null;
@@ -29,8 +29,8 @@ interface ProjectState {
   removeCharacterLocal: (id: string) => void;
   upsertWorldLocal: (w: WorldSection) => void;
   removeWorldLocal: (id: string) => void;
-  upsertPlotLocal: (p: PlotPoint) => void;
-  removePlotLocal: (id: string) => void;
+  upsertPlotNoteLocal: (p: PlotNote) => void;
+  removePlotNoteLocal: (id: string) => void;
   upsertChapterLocal: (c: Chapter) => void;
   removeChapterLocal: (id: string) => void;
 }
@@ -40,7 +40,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   project: null,
   characters: [],
   worldbuilding: [],
-  plot: [],
+  plotNotes: [],
   chapters: [],
   loading: false,
   error: null,
@@ -53,7 +53,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         project: data.project,
         characters: data.characters,
         worldbuilding: data.worldbuilding,
-        plot: data.plot,
+        plotNotes: data.plotNotes,
         chapters: data.chapters,
         loading: false,
         error: null,
@@ -74,7 +74,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       project: null,
       characters: [],
       worldbuilding: [],
-      plot: [],
+      plotNotes: [],
       chapters: [],
       error: null,
     }),
@@ -112,16 +112,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   removeWorldLocal: (id) =>
     set((s) => ({ worldbuilding: s.worldbuilding.filter((x) => x.id !== id) })),
 
-  upsertPlotLocal: (p) =>
+  upsertPlotNoteLocal: (p) =>
     set((s) => {
-      const exists = s.plot.some((x) => x.id === p.id);
+      const exists = s.plotNotes.some((x) => x.id === p.id);
       return {
-        plot: exists ? s.plot.map((x) => (x.id === p.id ? p : x)) : [...s.plot, p],
+        plotNotes: exists
+          ? s.plotNotes.map((x) => (x.id === p.id ? p : x))
+          : [...s.plotNotes, p],
       };
     }),
 
-  removePlotLocal: (id) =>
-    set((s) => ({ plot: s.plot.filter((x) => x.id !== id) })),
+  removePlotNoteLocal: (id) =>
+    set((s) => ({ plotNotes: s.plotNotes.filter((x) => x.id !== id) })),
 
   upsertChapterLocal: (c) =>
     set((s) => {

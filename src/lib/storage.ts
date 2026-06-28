@@ -6,7 +6,7 @@ import { env } from "@/env";
 import type {
   Chapter,
   Character,
-  PlotPoint,
+  PlotNote,
   Project,
   ProjectData,
   RelationshipType,
@@ -139,7 +139,7 @@ export async function createProject(
   // 初始化各数据文件
   await writeJson(path.join(dir, "worldbuilding.json"), []);
   await writeJson(path.join(dir, "characters.json"), []);
-  await writeJson(path.join(dir, "plot.json"), []);
+  await writeJson(path.join(dir, "planning.json"), []);
   await writeJson(path.join(dir, "chapters.json"), []);
   await writeJson(path.join(dir, "chat.json"), []);
   return project;
@@ -390,49 +390,53 @@ export async function deleteWorldSection(
   await touchProject(projectId);
 }
 
-/** ===== 剧情 ===== */
-export async function listPlotPoints(
-  projectId: string,
-): Promise<PlotPoint[]> {
-  return readList<PlotPoint>(projectId, "plot.json");
+/** ===== 剧情规划 ===== */
+export async function listPlotNotes(projectId: string): Promise<PlotNote[]> {
+  return readList<PlotNote>(projectId, "planning.json");
 }
 
-export async function upsertPlotPoint(
+export async function upsertPlotNote(
   projectId: string,
-  input: Partial<PlotPoint> & { title: string },
-): Promise<PlotPoint> {
-  const list = await listPlotPoints(projectId);
+  input: Partial<PlotNote> & { title: string; type: PlotNote["type"] },
+): Promise<PlotNote> {
+  const list = await listPlotNotes(projectId);
   const existing = input.id ? list.find((p) => p.id === input.id) : undefined;
   if (existing) {
-    const updated: PlotPoint = { ...existing, ...definedFields(input), id: existing.id };
+    const updated: PlotNote = {
+      ...existing,
+      ...definedFields(input),
+      id: existing.id,
+      updatedAt: now(),
+    };
     const next = list.map((p) => (p.id === existing.id ? updated : p));
-    await writeList(projectId, "plot.json", next);
+    await writeList(projectId, "planning.json", next);
     await touchProject(projectId);
     return updated;
   }
-  const created: PlotPoint = {
+  const created: PlotNote = {
     id: nanoid(12),
-    act: input.act ?? 1,
-    order: input.order ?? list.length + 1,
+    type: input.type,
     title: input.title,
-    summary: input.summary ?? "",
+    content: input.content ?? "",
+    status: input.status ?? "idea",
     characterIds: input.characterIds ?? [],
+    updatedAt: now(),
   };
   list.push(created);
-  await writeList(projectId, "plot.json", list);
+  await writeList(projectId, "planning.json", list);
   await touchProject(projectId);
   return created;
 }
 
-export async function deletePlotPoint(
+export async function deletePlotNote(
   projectId: string,
-  plotId: string,
+  noteId: string,
 ): Promise<void> {
-  const list = await listPlotPoints(projectId);
+  const list = await listPlotNotes(projectId);
   await writeList(
     projectId,
-    "plot.json",
-    list.filter((p) => p.id !== plotId),
+    "planning.json",
+    list.filter((p) => p.id !== noteId),
   );
   await touchProject(projectId);
 }
@@ -467,6 +471,8 @@ export async function upsertChapter(
     order: input.order ?? maxOrder + 1,
     title: input.title,
     outline: input.outline ?? "",
+    characterIds: input.characterIds ?? [],
+    notes: input.notes ?? "",
     status: input.status ?? "outline",
     wordCount: input.wordCount ?? 0,
     updatedAt: now(),
@@ -545,13 +551,13 @@ export async function getProjectData(
 ): Promise<ProjectData | null> {
   const project = await getProject(projectId);
   if (!project) return null;
-  const [worldbuilding, characters, plot, chapters] = await Promise.all([
+  const [worldbuilding, characters, plotNotes, chapters] = await Promise.all([
     listWorldSections(projectId),
     listCharacters(projectId),
-    listPlotPoints(projectId),
+    listPlotNotes(projectId),
     listChapters(projectId),
   ]);
-  return { project, worldbuilding, characters, plot, chapters };
+  return { project, worldbuilding, characters, plotNotes, chapters };
 }
 
 async function touchProject(projectId: string): Promise<void> {

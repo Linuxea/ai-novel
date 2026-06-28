@@ -5,7 +5,7 @@ import * as storage from "@/lib/storage";
 import {
   CreateChapterOutlineInputSchema,
   UpsertCharacterInputSchema,
-  UpsertPlotPointInputSchema,
+  UpsertPlotNoteInputSchema,
   UpsertRelationshipInputSchema,
   UpsertWorldSectionInputSchema,
 } from "@/lib/types";
@@ -99,23 +99,32 @@ export function buildTools(projectId: string) {
       }),
     }),
 
-    upsert_plot_point: tool({
+    upsert_plot_note: tool({
       description:
-        "创建或更新一个剧情节点（按幕 act 和顺序 order 组织）。可关联涉及的角色 characterIds。",
-      inputSchema: UpsertPlotPointInputSchema,
+        "创建或更新一条「剧情规划」。用于沉淀跨章的线索与方向——故事线(arc)、伏笔(foreshadow)、转折(twist)、后续走向(plan)、备忘(note)。注意：这不同于章节大纲（章节大纲是某一章具体写什么）；此处记录的是贯穿多章的脉络、需要回收的伏笔、整体走向等。status：idea构想中/active进行中/resolved已收束。",
+      inputSchema: UpsertPlotNoteInputSchema,
       execute: safe(async (input) => {
-        const created = await storage.upsertPlotPoint(projectId, input);
+        const created = await storage.upsertPlotNote(projectId, input);
         return {
           success: true,
           id: created.id,
-          message: `已${input.id ? "更新" : "创建"}剧情节点（第${created.act}幕）「${created.title}」`,
+          message: `已${input.id ? "更新" : "创建"}剧情规划[${created.type}·${created.status}]「${created.title}」`,
         };
+      }),
+    }),
+
+    delete_plot_note: tool({
+      description: "删除一条剧情规划（按 id）。",
+      inputSchema: DeleteByIdSchema,
+      execute: safe(async ({ id }) => {
+        await storage.deletePlotNote(projectId, id);
+        return { success: true, message: `已删除剧情规划 (${id})` };
       }),
     }),
 
     create_chapter_outline: tool({
       description:
-        "创建或更新一章的大纲（不含正文）。当确定了章节规划或剧情需要落到章节时调用。若同名章节已存在（标题完全一致），将更新其大纲而非新建。",
+        "创建或更新一章的大纲（不含正文）。以「章」为唯一内容组织单位——当确定了一章要写什么时调用本工具保存。可选择性传入涉及角色 characterIds 与作者备注 notes。若同名章节已存在（标题完全一致），将更新其大纲而非新建。",
       inputSchema: CreateChapterOutlineInputSchema,
       execute: safe(async (input) => {
         const chapters = await storage.listChapters(projectId);
@@ -128,6 +137,8 @@ export function buildTools(projectId: string) {
           title: input.title,
           order: input.order ?? matched?.order,
           outline: input.outline,
+          characterIds: input.characterIds,
+          notes: input.notes,
           status: matched?.status === "done" ? matched.status : "outline",
         });
         const updated = !!matched;

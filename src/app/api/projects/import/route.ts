@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
       if (entry.name === "project.json") continue;
       // 跳过原子写残留的临时文件
       if (entry.name.endsWith(".tmp")) continue;
+      // 跳过已废弃的 plot.json（旧导出包可能包含）
+      if (entry.name === "plot.json") continue;
       const content = await entry.async("nodebuffer");
       const target = path.join(dir, entry.name);
       // Zip Slip 防护：解析后的路径必须仍在项目目录内

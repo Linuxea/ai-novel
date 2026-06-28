@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { useProjectStore } from "@/lib/store";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { ChapterStatus } from "@/lib/types";
 
 const STATUS_META: Record<ChapterStatus, { label: string; variant: "outline" | "secondary" | "default" }> = {
@@ -29,10 +30,11 @@ const STATUS_META: Record<ChapterStatus, { label: string; variant: "outline" | "
 };
 
 export default function ChaptersPage() {
-  const { project, chapters, upsertChapterLocal, removeChapterLocal } =
+  const { project, characters, chapters, upsertChapterLocal, removeChapterLocal } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
+        characters: s.characters,
         chapters: s.chapters,
         upsertChapterLocal: s.upsertChapterLocal,
         removeChapterLocal: s.removeChapterLocal,
@@ -41,11 +43,16 @@ export default function ChaptersPage() {
   const projectId = project?.id ?? "";
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ title: "", outline: "" });
+  const [form, setForm] = useState({
+    title: "",
+    outline: "",
+    notes: "",
+    characterIds: [] as string[],
+  });
   const [saving, setSaving] = useState(false);
 
   function openCreate() {
-    setForm({ title: "", outline: "" });
+    setForm({ title: "", outline: "", notes: "", characterIds: [] });
     setDialogOpen(true);
   }
 
@@ -59,6 +66,8 @@ export default function ChaptersPage() {
       const { chapter } = await api.upsertChapter(projectId, {
         title: form.title,
         outline: form.outline,
+        notes: form.notes,
+        characterIds: form.characterIds,
         status: "outline",
       });
       upsertChapterLocal(chapter);
@@ -134,6 +143,24 @@ export default function ChaptersPage() {
                         {c.outline}
                       </p>
                     )}
+                    {c.notes && (
+                      <p className="mt-0.5 line-clamp-1 text-xs italic text-muted-foreground/80">
+                        备注：{c.notes}
+                      </p>
+                    )}
+                    {!!(c.characterIds ?? []).length && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(c.characterIds ?? []).map((id) => {
+                          const name = characters.find((x) => x.id === id)?.name;
+                          if (!name) return null;
+                          return (
+                            <Badge key={id} variant="secondary" className="text-[10px]">
+                              {name}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
                     <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground/70">
                       <FileText className="h-3 w-3" />
                       {(c.wordCount || 0).toLocaleString()} 字
@@ -189,6 +216,46 @@ export default function ChaptersPage() {
                 placeholder="本章主要情节…"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label>备注</Label>
+              <Input
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="如：待扩写"
+              />
+            </div>
+            {characters.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>涉及角色（可选）</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {characters.map((ch) => {
+                    const on = form.characterIds.includes(ch.id);
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            characterIds: on
+                              ? f.characterIds.filter((x) => x !== ch.id)
+                              : [...f.characterIds, ch.id],
+                          }))
+                        }
+                        className={cn(
+                          "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {ch.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>

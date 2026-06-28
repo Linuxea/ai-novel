@@ -8,7 +8,7 @@ import {
   Users,
   GitFork,
   Globe,
-  ScrollText,
+  Compass,
   BookText,
   Settings,
 } from "lucide-react";
@@ -20,7 +20,7 @@ const NAV = [
   { href: "/characters", label: "角色", icon: Users },
   { href: "/relationships", label: "关系图谱", icon: GitFork },
   { href: "/worldbuilding", label: "世界观", icon: Globe },
-  { href: "/plot", label: "剧情", icon: ScrollText },
+  { href: "/planning", label: "剧情规划", icon: Compass },
   { href: "/chapters", label: "章节", icon: BookText },
   { href: "/settings", label: "设置", icon: Settings },
 ];

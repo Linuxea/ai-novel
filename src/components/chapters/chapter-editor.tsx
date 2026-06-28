@@ -16,6 +16,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -33,9 +34,10 @@ export function ChapterEditor({
   projectId: string;
   chapterId: string;
 }) {
-  const { chapters, upsertChapterLocal } = useProjectStore(
+  const { chapters, characters, upsertChapterLocal } = useProjectStore(
     useShallow((s) => ({
       chapters: s.chapters,
+      characters: s.characters,
       upsertChapterLocal: s.upsertChapterLocal,
     })),
   );
@@ -53,6 +55,11 @@ export function ChapterEditor({
   const [outlineEditing, setOutlineEditing] = useState(false);
   const [outlineDraft, setOutlineDraft] = useState("");
   const [outlineSaving, setOutlineSaving] = useState(false);
+
+  // 备注内联编辑
+  const [notesEditing, setNotesEditing] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
 
   // 加载章节内容
   useEffect(() => {
@@ -203,6 +210,48 @@ export function ChapterEditor({
     }
   }
 
+  async function toggleCharacter(id: string) {
+    if (!chapter) return;
+    const current = chapter.characterIds ?? [];
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id];
+    try {
+      const { chapter: updated } = await api.updateChapter(
+        projectId,
+        chapterId,
+        { characterIds: next },
+      );
+      upsertChapterLocal(updated);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  function startNotesEdit() {
+    setNotesDraft(chapter?.notes ?? "");
+    setNotesEditing(true);
+  }
+
+  async function saveNotes() {
+    if (!chapter) return;
+    setNotesSaving(true);
+    try {
+      const { chapter: updated } = await api.updateChapter(
+        projectId,
+        chapterId,
+        { notes: notesDraft },
+      );
+      upsertChapterLocal(updated);
+      setNotesEditing(false);
+      toast.success("备注已保存");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setNotesSaving(false);
+    }
+  }
+
   const wordCount = useMemo(
     () => content.replace(/\s+/g, "").length,
     [content],
@@ -322,6 +371,84 @@ export function ChapterEditor({
           </div>
         )}
       </div>
+
+      {/* 备注 */}
+      <div className="border-b bg-muted/30 px-6 py-2 text-xs">
+        {notesEditing ? (
+          <div className="flex flex-col gap-2">
+            <Input
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              placeholder="如：待扩写"
+              className="text-xs"
+              autoFocus
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setNotesEditing(false)}
+                disabled={notesSaving}
+              >
+                取消
+              </Button>
+              <Button size="sm" onClick={saveNotes} disabled={notesSaving}>
+                {notesSaving ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                保存备注
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 text-muted-foreground">
+              <span className="font-medium">备注：</span>
+              {chapter.notes || (
+                <span className="italic">（暂无，点击右侧编辑添加）</span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-xs"
+              onClick={startNotesEdit}
+            >
+              <Pencil className="mr-1 h-3 w-3" />
+              编辑备注
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* 涉及角色 */}
+      {characters.length > 0 && (
+        <div className="border-b bg-muted/30 px-6 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-muted-foreground">涉及角色：</span>
+            {characters.map((char) => {
+              const on = (chapter.characterIds ?? []).includes(char.id);
+              return (
+                <button
+                  key={char.id}
+                  type="button"
+                  onClick={() => toggleCharacter(char.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                    on
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {char.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 编辑器 / 预览 */}
       <div className="flex flex-1 flex-col overflow-hidden">
