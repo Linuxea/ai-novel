@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "ai";
 import { isAIConfigured } from "@/env";
 import { getModel } from "@/lib/ai/client";
-import { buildOutlineFromContentPrompt } from "@/lib/ai/writer-prompt";
+import { buildOutlineSyncPrompt } from "@/lib/ai/writer-prompt";
 import { getProject, listChapters, readChapterContent } from "@/lib/storage";
 
 type Params = {
@@ -43,10 +43,11 @@ export async function POST(_req: NextRequest, { params }: Params) {
   }
 
   try {
+    const outline = chapter.outline?.trim() ?? "";
     const result = await generateText({
       model: getModel(project.aiModel || undefined),
-      system: buildOutlineFromContentPrompt(project, chapter),
-      prompt: content,
+      system: buildOutlineSyncPrompt(project, chapter, outline),
+      prompt: `【原有大纲】\n${outline || "（无）"}\n\n【本章正文】\n${content}`,
       temperature: 0.3,
     });
     return NextResponse.json({ outline: result.text.trim() });
