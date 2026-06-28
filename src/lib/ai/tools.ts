@@ -115,19 +115,27 @@ export function buildTools(projectId: string) {
 
     create_chapter_outline: tool({
       description:
-        "创建一章的大纲（不含正文）。当确定了章节规划或剧情需要落到章节时调用。",
+        "创建或更新一章的大纲（不含正文）。当确定了章节规划或剧情需要落到章节时调用。若同名章节已存在（标题完全一致），将更新其大纲而非新建。",
       inputSchema: CreateChapterOutlineInputSchema,
       execute: safe(async (input) => {
+        const chapters = await storage.listChapters(projectId);
+        const normalized = input.title.trim().toLowerCase();
+        const matched = chapters.find(
+          (c) => c.title.trim().toLowerCase() === normalized,
+        );
         const created = await storage.upsertChapter(projectId, {
+          id: matched?.id,
           title: input.title,
-          order: input.order,
+          order: input.order ?? matched?.order,
           outline: input.outline,
-          status: "outline",
+          status: matched?.status === "done" ? matched.status : "outline",
         });
+        const updated = !!matched;
         return {
           success: true,
           id: created.id,
-          message: `已创建第${created.order}章大纲「${created.title}」`,
+          updated,
+          message: `${updated ? "已更新" : "已创建"}第${created.order}章大纲「${created.title}」`,
         };
       }),
     }),

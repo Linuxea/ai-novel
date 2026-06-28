@@ -49,6 +49,11 @@ export function ChapterEditor({
   const abortRef = useRef<AbortController | null>(null);
   const [dirty, setDirty] = useState(false);
 
+  // 大纲内联编辑
+  const [outlineEditing, setOutlineEditing] = useState(false);
+  const [outlineDraft, setOutlineDraft] = useState("");
+  const [outlineSaving, setOutlineSaving] = useState(false);
+
   // 加载章节内容
   useEffect(() => {
     api
@@ -124,7 +129,7 @@ export function ChapterEditor({
     abortRef.current = controller;
     try {
       const res = await fetch(
-        `/api/projects/${projectId}/chapters/${chapterId}/generate`,
+        `/api/projects/${projectId}/chapters/${chapterId}/generate?mode=${append ? "continue" : "regenerate"}`,
         { method: "POST", signal: controller.signal },
       );
       if (!res.ok || !res.body) {
@@ -171,6 +176,30 @@ export function ChapterEditor({
       toast.success("已更新状态");
     } catch (e) {
       toast.error((e as Error).message);
+    }
+  }
+
+  function startOutlineEdit() {
+    setOutlineDraft(chapter?.outline ?? "");
+    setOutlineEditing(true);
+  }
+
+  async function saveOutline() {
+    if (!chapter) return;
+    setOutlineSaving(true);
+    try {
+      const { chapter: updated } = await api.updateChapter(
+        projectId,
+        chapterId,
+        { outline: outlineDraft },
+      );
+      upsertChapterLocal(updated);
+      setOutlineEditing(false);
+      toast.success("大纲已保存");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setOutlineSaving(false);
     }
   }
 
@@ -224,7 +253,7 @@ export function ChapterEditor({
               </Button>
               <Button size="sm" onClick={() => handleGenerate(false)}>
                 <Sparkles className="mr-2 h-3.5 w-3.5" />
-                AI 生成
+                {content.trim() ? "重新生成" : "AI 生成"}
               </Button>
             </>
           )}
@@ -243,13 +272,56 @@ export function ChapterEditor({
         </div>
       </header>
 
-      {/* 大纲提示 */}
-      {chapter.outline && (
-        <div className="border-b bg-muted/30 px-6 py-2 text-xs text-muted-foreground">
-          <span className="font-medium">大纲：</span>
-          {chapter.outline}
-        </div>
-      )}
+      {/* 大纲 */}
+      <div className="border-b bg-muted/30 px-6 py-2 text-xs">
+        {outlineEditing ? (
+          <div className="flex flex-col gap-2">
+            <Textarea
+              value={outlineDraft}
+              onChange={(e) => setOutlineDraft(e.target.value)}
+              placeholder="本章主要情节…"
+              className="min-h-[60px] text-xs leading-relaxed"
+              autoFocus
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setOutlineEditing(false)}
+                disabled={outlineSaving}
+              >
+                取消
+              </Button>
+              <Button size="sm" onClick={saveOutline} disabled={outlineSaving}>
+                {outlineSaving ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                保存大纲
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 text-muted-foreground">
+              <span className="font-medium">大纲：</span>
+              {chapter.outline || (
+                <span className="italic">（暂无，点击右侧编辑添加）</span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-xs"
+              onClick={startOutlineEdit}
+            >
+              <Pencil className="mr-1 h-3 w-3" />
+              编辑大纲
+            </Button>
+          </div>
+        )}
+      </div>
 
       {/* 编辑器 / 预览 */}
       <div className="flex flex-1 flex-col overflow-hidden">

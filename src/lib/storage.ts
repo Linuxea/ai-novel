@@ -461,9 +461,10 @@ export async function upsertChapter(
     await touchProject(projectId);
     return updated;
   }
+  const maxOrder = list.reduce((m, c) => Math.max(m, c.order), 0);
   const created: Chapter = {
     id: nanoid(12),
-    order: input.order ?? list.length + 1,
+    order: input.order ?? maxOrder + 1,
     title: input.title,
     outline: input.outline ?? "",
     status: input.status ?? "outline",
@@ -481,11 +482,12 @@ export async function deleteChapter(
   chapterId: string,
 ): Promise<void> {
   const list = await listChapters(projectId);
-  await writeList(
-    projectId,
-    "chapters.json",
-    list.filter((c) => c.id !== chapterId),
-  );
+  const remaining = list.filter((c) => c.id !== chapterId);
+  // 重排 order 为连续的 1..n，消除删除后的空洞与潜在冲突
+  const reordered = remaining
+    .sort((a, b) => a.order - b.order)
+    .map((c, i) => ({ ...c, order: i + 1 }));
+  await writeList(projectId, "chapters.json", reordered);
   const file = chapterFilePath(projectId, chapterId);
   if (await fileExists(file)) await fs.unlink(file);
   await touchProject(projectId);
