@@ -11,9 +11,9 @@ export const env = {
   AI_API_KEY: getEnv("AI_API_KEY"),
   AI_BASE_URL: getEnv(
     "AI_BASE_URL",
-    "https://api.openai.com/v1",
+    "https://api.deepseek.com/v1",
   ),
-  AI_MODEL: getEnv("AI_MODEL", "gpt-4o-mini"),
+  AI_MODEL: getEnv("AI_MODEL", "deepseek-v4-flash"),
   /** 数据存储根目录（项目根下的 data/） */
   DATA_DIR: getEnv("DATA_DIR", "data"),
 };

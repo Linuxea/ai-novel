@@ -120,10 +120,15 @@ function SettingsFormInner({
         <div>
           <h2 className="text-sm font-semibold">AI 模型</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            留空则使用全局默认模型：
-            <code className="mx-1 rounded bg-muted px-1.5 py-0.5">
-              {defaultModel || "（未配置）"}
+            留空则使用全局默认模型（
+            <code className="mx-0.5 rounded bg-muted px-1.5 py-0.5">
+              {defaultModel || "deepseek-v4-flash"}
             </code>
+            ）；可填
+            <code className="mx-0.5 rounded bg-muted px-1.5 py-0.5">
+              deepseek-v4-pro
+            </code>
+            覆盖为更强模型
           </p>
         </div>
         <div className="space-y-1.5">
@@ -131,7 +136,7 @@ function SettingsFormInner({
           <Input
             value={form.aiModel}
             onChange={(e) => setForm({ ...form, aiModel: e.target.value })}
-            placeholder="例如 deepseek-chat"
+            placeholder="例如 deepseek-v4-pro"
           />
         </div>
         <div className="space-y-1.5">

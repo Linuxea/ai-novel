@@ -18,24 +18,21 @@
 npm install
 ```
 
-### 2. 配置 AI（OpenAI 兼容接口）
+### 2. 配置 DeepSeek API
 
-复制 `.env.example` 为 `.env.local`，填入你的 AI 服务配置：
+复制 `.env.example` 为 `.env.local`，填入 DeepSeek API Key：
 
 ```bash
 cp .env.example .env.local
 ```
 
-支持任选其一（取消注释）：
+| 变量 | 说明 |
+|------|------|
+| `AI_API_KEY` | DeepSeek API Key |
+| `AI_BASE_URL` | `https://api.deepseek.com/v1` |
+| `AI_MODEL` | 默认 `deepseek-v4-flash`；更强可选 `deepseek-v4-pro`（项目设置页也可覆盖） |
 
-| 服务商 | AI_BASE_URL | AI_MODEL |
-|--------|-------------|----------|
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
-| Moonshot | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
-| 本地 Ollama | `http://localhost:11434/v1` | `qwen2.5:7b` |
-
-> 模型需支持 **工具调用（function calling）**。未配置时对话页会给出友好提示。
+> 模型需支持 **工具调用（function calling）**（V4 已支持）。未配置 `AI_API_KEY` 时对话页会给出友好提示。
 
 ### 3. 启动
 

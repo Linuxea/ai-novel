@@ -30,7 +30,7 @@ Verify order before considering work done: **lint → typecheck → build**. All
 - `useChat` lives in **`@ai-sdk/react`**, not `ai`. In v7 it does NOT manage `input`/`handleSubmit`/`isLoading` — call `sendMessage({ text })` and track input state yourself. `status: 'submitted' | 'streaming' | 'ready' | 'error'`.
 - Convert UI→model messages with **`await convertToModelMessages(messages)`** (async; renamed from `convertToCoreMessages`).
 - Multi-step tool calls: `stopWhen: stepCountIs(n)`. Chat persistence is client-side (save on `status==='ready'`).
-- **`getModel()` in `src/lib/ai/client.ts` must call `openai.chat(model)`**, not the default `openai(model)`. The default hits OpenAI's Responses API (`/v1/responses`), which only OpenAI supports — DeepSeek/Moonshot/Ollama return 404. `.chat()` forces `/v1/chat/completions`.
+- **`getModel()` in `src/lib/ai/client.ts` uses `@ai-sdk/deepseek` only** — default model `deepseek-v4-flash`; per-project override via `project.aiModel` (e.g. `deepseek-v4-pro`). Chat route uses `sendReasoning: true` for thinking stream parts.
 
 ### Next.js 16
 - Dynamic route `params`/`searchParams` are **`Promise`** — `await params` in every route handler and page.
@@ -46,7 +46,7 @@ Verify order before considering work done: **lint → typecheck → build**. All
 
 ## Environment
 
-- `.env.local` (gitignored) configures AI: `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL` (any OpenAI-compatible provider; model must support **tool calling**). Template in `.env.example`.
+- `.env.local` (gitignored) configures DeepSeek: `AI_API_KEY`, `AI_BASE_URL` (default `https://api.deepseek.com/v1`), `AI_MODEL` (default `deepseek-v4-flash`; must support **tool calling**). Template in `.env.example`.
 - Without `AI_API_KEY`, `/api/chat` returns 503 with a friendly message (not a crash).
 - Runtime data lives in `data/` (gitignored). Deleting it loses all projects.
 
