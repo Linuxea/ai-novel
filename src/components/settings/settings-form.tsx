@@ -122,7 +122,7 @@ function SettingsFormInner({
           <p className="mt-1 text-xs text-muted-foreground">
             留空则使用全局默认模型（
             <code className="mx-0.5 rounded bg-muted px-1.5 py-0.5">
-              {defaultModel || "deepseek-v4-flash"}
+              {defaultModel}
             </code>
             ）；可填
             <code className="mx-0.5 rounded bg-muted px-1.5 py-0.5">
