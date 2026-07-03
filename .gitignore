@@ -46,3 +46,9 @@ next-env.d.ts
 
 # opencode 会话/计划文件（本地）
 .opencode/
+
+# 编辑器临时/备份文件（Vim undo/swap 等）
+*.un~
+*.swp
+*.swo
+*~
