@@ -31,6 +31,7 @@ cp .env.example .env.local
 | `AI_API_KEY` | DeepSeek API Key |
 | `AI_BASE_URL` | `https://api.deepseek.com/v1` |
 | `AI_MODEL` | 默认 `deepseek-v4-flash`；更强可选 `deepseek-v4-pro`（项目设置页也可覆盖） |
+| `DATA_DIR` | 数据存储目录，默认 `data` |
 
 > 模型需支持 **工具调用（function calling）**（V4 已支持）。未配置 `AI_API_KEY` 时对话页会给出友好提示。
 
@@ -44,7 +45,7 @@ npm run dev
 
 ## 数据存储
 
-所有数据保存在项目根的 `data/projects/<id>/` 下（JSON 存结构化设定，Markdown 存章节正文），便于版本管理与手动编辑。
+所有数据默认保存在项目根的 `data/projects/<id>/` 下（JSON 存结构化设定，Markdown 存章节正文）。`data/` 默认被 Git 忽略；需要备份时请使用导出功能，或自行调整版本管理策略。
 
 ## 技术栈
 
@@ -61,8 +62,9 @@ npm run dev
 npm run dev      # 开发
 npm run build    # 生产构建
 npm run lint     # 代码检查
+npm run typecheck # TypeScript 类型检查
 ```
 
 ## 工作原理
 
-AI 在对话中通过 **function calling** 调用工具（`upsert_character` / `upsert_relationship` / `upsert_world_section` / `create_chapter_outline`），在自然交流的同时把设定写入资料库——而非让 AI 输出 JSON 文本再解析。章节正文生成使用独立的流式纯文本端点，注入世界观、角色、前文作为上下文。
+AI 在对话中通过 **function calling** 调用工具（`upsert_character` / `delete_character` / `upsert_relationship` / `upsert_world_section` / `upsert_plot_note` / `delete_plot_note` / `create_chapter_outline` / `list_relationship_types`），在自然交流的同时把设定写入资料库——而非让 AI 输出 JSON 文本再解析。章节正文生成使用独立的流式纯文本端点，注入世界观、角色、前文作为上下文。

@@ -6,5 +6,5 @@ type Props = {
 
 export default async function ChapterPage({ params }: Props) {
   const { id, chapterId } = await params;
-  return <ChapterEditor projectId={id} chapterId={chapterId} />;
+  return <ChapterEditor key={`${id}-${chapterId}`} projectId={id} chapterId={chapterId} />;
 }

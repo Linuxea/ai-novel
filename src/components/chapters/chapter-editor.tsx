@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import Link from "next/link";
 import {
@@ -50,6 +50,7 @@ export function ChapterEditor({
   const [generating, setGenerating] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const contentRef = useRef("");
   const [dirty, setDirty] = useState(false);
 
   // 大纲内联编辑
@@ -65,17 +66,29 @@ export function ChapterEditor({
 
   // 加载章节内容
   useEffect(() => {
+    let cancelled = false;
     api
       .getChapterContent(projectId, chapterId)
       .then((res) => {
-        setContent(res.content || "");
+        if (cancelled) return;
+        const next = res.content || "";
+        contentRef.current = next;
+        setContent(next);
         setLoaded(true);
       })
       .catch((e) => {
+        if (cancelled) return;
         toast.error((e as Error).message);
         setLoaded(true);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [projectId, chapterId]);
+
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
 
   // 卸载时中止在途的 AI 生成
   useEffect(() => {
@@ -85,52 +98,65 @@ export function ChapterEditor({
   }, []);
 
   function handleChange(v: string) {
+    contentRef.current = v;
     setContent(v);
     setDirty(true);
   }
 
+  const saveContent = useCallback(
+    async (snapshot: string, silent = false) => {
+      if (!loaded || !chapter) return false;
+      setSaving(true);
+      try {
+        await api.saveChapterContent(projectId, chapterId, snapshot);
+        if (contentRef.current === snapshot) setDirty(false);
+        // 刷新 store 中的字数/状态
+        upsertChapterLocal({
+          ...chapter,
+          wordCount: snapshot.replace(/\s+/g, "").length,
+        });
+        if (!silent) toast.success("已保存");
+        return true;
+      } catch (e) {
+        toast.error((e as Error).message);
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [chapter, chapterId, loaded, projectId, upsertChapterLocal],
+  );
+
   async function handleSave(silent = false) {
-    if (!loaded) return;
-    setSaving(true);
-    try {
-      await api.saveChapterContent(projectId, chapterId, content);
-      setDirty(false);
-      // 刷新 store 中的字数/状态
-      upsertChapterLocal({
-        ...chapter!,
-        wordCount: content.replace(/\s+/g, "").length,
-      });
-      if (!silent) toast.success("已保存");
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
+    return saveContent(contentRef.current, silent);
   }
 
   // 自动保存（失焦或停顿）
   useEffect(() => {
     if (!loaded || !dirty) return;
-    const timer = setTimeout(() => handleSave(true), 2000);
+    const snapshot = content;
+    const timer = setTimeout(() => saveContent(snapshot, true), 2000);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, loaded]);
+  }, [content, dirty, loaded, saveContent]);
 
   async function handleGenerate(append: boolean) {
     if (generating) {
       abortRef.current?.abort();
       return;
     }
-    if (append && !content.trim()) {
+    if (append && dirty && !(await handleSave(true))) return;
+    const baseContent = contentRef.current;
+    if (append && !baseContent.trim()) {
       toast.error("当前没有正文可续写，将生成完整章节");
     }
     setGenerating(true);
     if (!append) {
       setTab("write");
-      if (content.trim() && !confirm("将覆盖当前正文，确定重新生成？")) {
+      if (baseContent.trim() && !confirm("将覆盖当前正文，确定重新生成？")) {
         setGenerating(false);
         return;
       }
+      contentRef.current = "";
       setContent("");
     }
     abortRef.current?.abort();
@@ -147,13 +173,15 @@ export function ChapterEditor({
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let acc = append ? content : "";
+      let acc = append ? contentRef.current : "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         acc += chunk;
+        contentRef.current = acc;
         setContent(acc);
+        setDirty(true);
       }
       toast.success("生成完成");
       // 保存
@@ -214,7 +242,9 @@ export function ChapterEditor({
 
   async function handleSyncOutline() {
     if (!chapter) return;
-    if (!content.trim()) {
+    if (dirty && !(await handleSave(true))) return;
+    const currentContent = contentRef.current;
+    if (!currentContent.trim()) {
       toast.error("正文为空，无法同步");
       return;
     }
@@ -307,6 +337,7 @@ export function ChapterEditor({
           <Link
             href={`/projects/${projectId}/chapters`}
             className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+            aria-label="返回章节列表"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -346,6 +377,7 @@ export function ChapterEditor({
             size="sm"
             onClick={() => handleSave(false)}
             disabled={saving}
+            aria-label="保存正文"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

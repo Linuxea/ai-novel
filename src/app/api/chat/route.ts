@@ -5,6 +5,8 @@ import { getModel } from "@/lib/ai/client";
 import { buildTools } from "@/lib/ai/tools";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { getProject, getProjectData } from "@/lib/storage";
+import { ChatRequestSchema } from "@/lib/api-schemas";
+import { handleRouteError, parseJson } from "@/lib/api-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,13 +22,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await req.json().catch(() => ({}));
-  const projectId: string | undefined = body.projectId;
-  const messages = body.messages;
-
-  if (!projectId || !Array.isArray(messages)) {
-    return Response.json({ error: "缺少 projectId 或 messages" }, { status: 400 });
+  let body;
+  try {
+    body = await parseJson(req, ChatRequestSchema);
+  } catch (e) {
+    return handleRouteError(e);
   }
+  const { projectId, messages } = body;
 
   const project = await getProject(projectId);
   if (!project) {
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
       model: getModel(project.aiModel || undefined),
       system: buildSystemPrompt(data),
       temperature: project.temperature ?? 0.8,
-      messages: await convertToModelMessages(messages),
+      messages: await convertToModelMessages(messages as never[]),
       tools: buildTools(projectId),
       stopWhen: stepCountIs(6),
     });

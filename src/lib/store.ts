@@ -35,6 +35,8 @@ interface ProjectState {
   removeChapterLocal: (id: string) => void;
 }
 
+let loadSeq = 0;
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projectId: null,
   project: null,
@@ -46,9 +48,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   error: null,
 
   load: async (projectId) => {
-    set({ projectId, loading: true, error: null });
+    const seq = ++loadSeq;
+    const current = get();
+    const sameProject = current.project?.id === projectId;
+    set(
+      sameProject
+        ? { projectId, loading: true, error: null }
+        : {
+            projectId,
+            project: null,
+            characters: [],
+            worldbuilding: [],
+            plotNotes: [],
+            chapters: [],
+            loading: true,
+            error: null,
+          },
+    );
     try {
       const data = await api.getProjectData(projectId);
+      if (seq !== loadSeq || get().projectId !== projectId) return;
       set({
         project: data.project,
         characters: data.characters,
@@ -59,6 +78,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         error: null,
       });
     } catch (e) {
+      if (seq !== loadSeq || get().projectId !== projectId) return;
       set({ loading: false, error: (e as Error).message });
     }
   },
@@ -68,7 +88,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (id) await get().load(id);
   },
 
-  reset: () =>
+  reset: () => {
+    loadSeq++;
     set({
       projectId: null,
       project: null,
@@ -77,7 +98,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       plotNotes: [],
       chapters: [],
       error: null,
-    }),
+      loading: false,
+    });
+  },
 
   upsertCharacterLocal: (c) =>
     set((s) => {

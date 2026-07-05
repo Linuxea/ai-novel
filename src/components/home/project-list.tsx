@@ -7,7 +7,7 @@ import { BookOpen, Plus, Trash2, Clock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 
 const GENRES = ["玄幻", "科幻", "言情", "悬疑", "武侠", "都市", "历史", "其他"];
@@ -156,7 +157,7 @@ export function ProjectList({ initialProjects }: { initialProjects: Project[] })
                 </Link>
                 <button
                   onClick={() => handleDelete(p.id)}
-                  className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                  className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
                   aria-label="删除"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -186,14 +187,20 @@ export function ProjectList({ initialProjects }: { initialProjects: Project[] })
               <Label>题材</Label>
               <div className="flex flex-wrap gap-2">
                 {GENRES.map((g) => (
-                  <Badge
+                  <button
                     key={g}
-                    variant={form.genre === g ? "default" : "outline"}
-                    className="cursor-pointer"
+                    type="button"
+                    className={cn(
+                      badgeVariants({
+                        variant: form.genre === g ? "default" : "outline",
+                      }),
+                      "cursor-pointer",
+                    )}
+                    aria-pressed={form.genre === g}
                     onClick={() => setForm({ ...form, genre: g })}
                   >
                     {g}
-                  </Badge>
+                  </button>
                 ))}
               </div>
             </div>

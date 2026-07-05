@@ -3,6 +3,7 @@ import type {
   Character,
   PlotNote,
   Project,
+  RelationshipType,
   WorldSection,
 } from "@/lib/types";
 
@@ -75,7 +76,13 @@ export const api = {
     }),
   addRelationship: (
     id: string,
-    data: { characterId: string; targetName: string; type: string; description?: string },
+    data: {
+      characterId: string;
+      targetId?: string;
+      targetName?: string;
+      type: RelationshipType;
+      description?: string;
+    },
   ) =>
     req<{ character: Character }>(`/api/projects/${id}/relationships`, {
       method: "POST",

@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { badgeVariants } from "@/components/ui/badge";
 import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useProjectStore } from "@/lib/store";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 
 const GENRES = ["玄幻", "科幻", "言情", "悬疑", "武侠", "都市", "历史", "其他"];
@@ -95,14 +96,20 @@ function SettingsFormInner({
           <Label>题材</Label>
           <div className="flex flex-wrap gap-2">
             {GENRES.map((g) => (
-              <Badge
+              <button
                 key={g}
-                variant={form.genre === g ? "default" : "outline"}
-                className="cursor-pointer"
+                type="button"
+                className={cn(
+                  badgeVariants({
+                    variant: form.genre === g ? "default" : "outline",
+                  }),
+                  "cursor-pointer",
+                )}
+                aria-pressed={form.genre === g}
                 onClick={() => setForm({ ...form, genre: g })}
               >
                 {g}
-              </Badge>
+              </button>
             ))}
           </div>
         </div>

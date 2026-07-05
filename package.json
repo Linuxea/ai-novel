@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit --incremental false"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.1",
@@ -33,7 +37,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.5.2",

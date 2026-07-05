@@ -1,30 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listCharacters, upsertCharacter } from "@/lib/storage";
+import { createCharacter, listCharacters } from "@/lib/storage";
+import { CreateCharacterSchema } from "@/lib/api-schemas";
+import { handleRouteError, parseJson } from "@/lib/api-route";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const characters = await listCharacters(id);
-  return NextResponse.json({ characters });
+  try {
+    const characters = await listCharacters(id);
+    return NextResponse.json({ characters });
+  } catch (e) {
+    return handleRouteError(e);
+  }
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body.name !== "string" || !body.name.trim()) {
-    return NextResponse.json(
-      { error: "缺少必填字段 name" },
-      { status: 400 },
-    );
-  }
   try {
-    const character = await upsertCharacter(id, body);
+    const body = await parseJson(req, CreateCharacterSchema);
+    const character = await createCharacter(id, body);
     return NextResponse.json({ character }, { status: 201 });
   } catch (e) {
-    return NextResponse.json(
-      { error: (e as Error).message },
-      { status: 400 },
-    );
+    return handleRouteError(e);
   }
 }

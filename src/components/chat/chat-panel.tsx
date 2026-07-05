@@ -24,10 +24,9 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const initRef = useRef(false);
-  const savingRef = useRef(false);
-  const pendingRef = useRef(false);
+  const epochRef = useRef(0);
+  const saveChainRef = useRef(Promise.resolve());
   const messagesRef = useRef<unknown[]>([]);
-  const saveImplRef = useRef<() => void>(() => {});
 
   const transport = useMemo(
     () =>
@@ -45,11 +44,19 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
   // 首次加载历史对话
   useEffect(() => {
+    const epoch = ++epochRef.current;
     let cancelled = false;
+    initRef.current = false;
+    messagesRef.current = [];
+    setMessages([]);
     api
       .getChat(projectId)
       .then((res) => {
-        if (!cancelled && Array.isArray(res.messages) && res.messages.length > 0) {
+        if (
+          !cancelled &&
+          epochRef.current === epoch &&
+          Array.isArray(res.messages)
+        ) {
           setMessages(res.messages as never[]);
         }
       })
@@ -57,10 +64,13 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         /* 项目无历史或路由未就绪时静默处理 */
       })
       .finally(() => {
-        initRef.current = true;
+        if (!cancelled && epochRef.current === epoch) {
+          initRef.current = true;
+        }
       });
     return () => {
       cancelled = true;
+      epochRef.current = epoch + 1;
     };
   }, [projectId, setMessages]);
 
@@ -71,31 +81,18 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
   // 当回复完成（status -> ready）时持久化并刷新资料库
   const doSave = useCallback(() => {
-    if (savingRef.current) {
-      pendingRef.current = true;
-      return;
-    }
-    savingRef.current = true;
+    const epoch = epochRef.current;
     const snapshot = messagesRef.current;
-    Promise.all([
-      api.saveChat(projectId, snapshot as unknown[]),
-      reloadStore(),
-    ])
-      .catch(() => {})
-      .finally(() => {
-        savingRef.current = false;
-        if (pendingRef.current) {
-          pendingRef.current = false;
-          // 经 ref 调用最新的 doSave，避免自引用
-          saveImplRef.current();
-        }
-      });
+    saveChainRef.current = saveChainRef.current
+      .then(async () => {
+        if (epochRef.current !== epoch) return;
+        await Promise.all([
+          api.saveChat(projectId, snapshot as unknown[]),
+          reloadStore(),
+        ]);
+      })
+      .catch(() => {});
   }, [projectId, reloadStore]);
-
-  // 让递归重试始终调用最新的 doSave
-  useEffect(() => {
-    saveImplRef.current = doSave;
-  }, [doSave]);
 
   useEffect(() => {
     if (status === "ready" && initRef.current && messages.length > 0) {
@@ -139,9 +136,20 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
   async function handleClear() {
     if (!confirm("清空所有对话历史？")) return;
-    await api.clearChat(projectId);
+    const epoch = ++epochRef.current;
+    initRef.current = true;
+    messagesRef.current = [];
     setMessages([]);
-    toast.success("已清空对话");
+    saveChainRef.current = saveChainRef.current.then(async () => {
+      await api.clearChat(projectId);
+    });
+    try {
+      await saveChainRef.current;
+      if (epochRef.current === epoch) toast.success("已清空对话");
+    } catch (e) {
+      saveChainRef.current = Promise.resolve();
+      if (epochRef.current === epoch) toast.error((e as Error).message);
+    }
   }
 
   return (
@@ -208,7 +216,13 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             className="max-h-40 min-h-[44px] resize-none"
           />
           {busy ? (
-            <Button onClick={stop} size="icon" variant="outline" className="h-11 w-11">
+            <Button
+              onClick={stop}
+              size="icon"
+              variant="outline"
+              className="h-11 w-11"
+              aria-label="停止生成"
+            >
               <Square className="h-4 w-4" />
             </Button>
           ) : (
@@ -217,6 +231,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
               size="icon"
               className="h-11 w-11"
               disabled={!input.trim()}
+              aria-label="发送消息"
             >
               <Send className="h-4 w-4" />
             </Button>

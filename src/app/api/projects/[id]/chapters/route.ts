@@ -1,30 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listChapters, upsertChapter } from "@/lib/storage";
+import { createChapter, listChapters } from "@/lib/storage";
+import { CreateChapterSchema } from "@/lib/api-schemas";
+import { handleRouteError, parseJson } from "@/lib/api-route";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const chapters = await listChapters(id);
-  return NextResponse.json({ chapters });
+  try {
+    const chapters = await listChapters(id);
+    return NextResponse.json({ chapters });
+  } catch (e) {
+    return handleRouteError(e);
+  }
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body.title !== "string" || !body.title.trim()) {
-    return NextResponse.json(
-      { error: "缺少必填字段 title" },
-      { status: 400 },
-    );
-  }
   try {
-    const chapter = await upsertChapter(id, body);
+    const body = await parseJson(req, CreateChapterSchema);
+    const chapter = await createChapter(id, body);
     return NextResponse.json({ chapter }, { status: 201 });
   } catch (e) {
-    return NextResponse.json(
-      { error: (e as Error).message },
-      { status: 400 },
-    );
+    return handleRouteError(e);
   }
 }

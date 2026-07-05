@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   const dir = projectDir(id);
   const zip = new JSZip();
-  await addDirToZip(zip, dir, "");
+  await addProjectFiles(zip, dir);
 
   const safeTitle = project.title.replace(/[^\w\u4e00-\u9fa5-]+/g, "_");
   const buf = await zip.generateAsync({ type: "uint8array" });
@@ -30,20 +30,41 @@ export async function GET(_req: NextRequest, { params }: Params) {
   });
 }
 
-async function addDirToZip(
-  zip: JSZip,
-  absDir: string,
-  relDir: string,
-): Promise<void> {
-  const entries = await fs.readdir(absDir, { withFileTypes: true });
+async function addProjectFiles(zip: JSZip, dir: string): Promise<void> {
+  const jsonFiles = [
+    "project.json",
+    "worldbuilding.json",
+    "characters.json",
+    "planning.json",
+    "chapters.json",
+    "chat.json",
+  ];
+
+  for (const file of jsonFiles) {
+    const abs = path.join(/*turbopackIgnore: true*/ dir, file);
+    if (await exists(abs)) zip.file(file, await fs.readFile(abs));
+  }
+
+  const chaptersDir = path.join(/*turbopackIgnore: true*/ dir, "chapters");
+  if (!(await exists(chaptersDir))) return;
+  const entries = await fs.readdir(chaptersDir, { withFileTypes: true });
   for (const entry of entries) {
-    const abs = path.join(absDir, entry.name);
-    const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      await addDirToZip(zip, abs, rel);
-    } else if (!entry.name.endsWith(".tmp")) {
-      const content = await fs.readFile(abs);
-      zip.file(rel, content);
-    }
+    if (!entry.isFile() || !/^[\w-]+\.md$/.test(entry.name)) continue;
+    const rel = `chapters/${entry.name}`;
+    zip.file(
+      rel,
+      await fs.readFile(
+        path.join(/*turbopackIgnore: true*/ chaptersDir, entry.name),
+      ),
+    );
+  }
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }

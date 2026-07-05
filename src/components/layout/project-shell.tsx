@@ -38,6 +38,14 @@ export function ProjectShell({
     );
   }
 
+  if (!project || project.id !== projectId) {
+    return (
+      <div className="flex h-screen items-center justify-center text-muted-foreground">
+        加载中…
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* 侧边栏 */}

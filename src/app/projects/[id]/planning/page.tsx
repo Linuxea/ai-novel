@@ -166,16 +166,18 @@ export default function PlanningPage() {
                     <Card key={p.id} className="group relative p-4">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-medium">{p.title}</h3>
-                        <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <div className="flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
                           <button
                             onClick={() => openEdit(p)}
                             className="rounded p-1 hover:bg-muted"
+                            aria-label={`编辑剧情规划 ${p.title}`}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(p)}
                             className="rounded p-1 hover:bg-destructive/10"
+                            aria-label={`删除剧情规划 ${p.title}`}
                           >
                             <Trash2 className="h-3.5 w-3.5 text-destructive" />
                           </button>

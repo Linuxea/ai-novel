@@ -16,7 +16,7 @@ import {
 } from "@xyflow/react";
 import { Plus, GitFork } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { badgeVariants } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { CharacterNode, type CharacterNodeData } from "@/components/graph/character-node";
 import { useProjectStore } from "@/lib/store";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   RELATIONSHIP_META,
   type Character,
@@ -220,10 +221,9 @@ function AddRelationshipDialog({
     }
     setSaving(true);
     try {
-      const targetName = characters.find((c) => c.id === to)?.name ?? "";
       await api.addRelationship(projectId, {
         characterId: from,
-        targetName,
+        targetId: to,
         type,
         description: desc,
       });
@@ -281,15 +281,19 @@ function AddRelationshipDialog({
             <Label>关系类型</Label>
             <div className="flex flex-wrap gap-2">
               {Object.entries(RELATIONSHIP_META).map(([key, meta]) => (
-                <Badge
+                <button
                   key={key}
-                  variant={type === key ? "default" : "outline"}
-                  className="cursor-pointer"
+                  type="button"
+                  className={cn(
+                    badgeVariants({ variant: type === key ? "default" : "outline" }),
+                    "cursor-pointer",
+                  )}
                   style={type === key ? { backgroundColor: meta.color } : {}}
+                  aria-pressed={type === key}
                   onClick={() => setType(key as RelationshipType)}
                 >
                   {meta.label}
-                </Badge>
+                </button>
               ))}
             </div>
           </div>

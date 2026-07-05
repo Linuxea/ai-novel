@@ -46,9 +46,20 @@ export function CharacterDialog({
     setSaving(true);
     try {
       const isEdit = !!character?.id;
+      const payload = {
+        name: form.name,
+        role: form.role,
+        aliases: form.aliases,
+        appearance: form.appearance,
+        personality: form.personality,
+        background: form.background,
+        goals: form.goals,
+        abilities: form.abilities,
+        notes: form.notes,
+      };
       const result = isEdit
-        ? await api.updateCharacter(projectId, character!.id, form)
-        : await api.upsertCharacter(projectId, form);
+        ? await api.updateCharacter(projectId, character!.id, payload)
+        : await api.upsertCharacter(projectId, payload);
       onSaved(result.character);
       toast.success(isEdit ? "已更新角色" : "已创建角色");
       onOpenChange(false);

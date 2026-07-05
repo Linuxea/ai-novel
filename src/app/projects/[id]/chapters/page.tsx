@@ -171,7 +171,8 @@ export default function ChaptersPage() {
                   </Link>
                   <button
                     onClick={() => handleDelete(c.id, c.title)}
-                    className="rounded p-2 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    className="rounded p-2 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                    aria-label={`删除章节 ${c.title}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

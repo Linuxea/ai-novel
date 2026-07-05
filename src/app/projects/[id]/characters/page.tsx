@@ -105,7 +105,7 @@ function CharactersContent() {
                     {c.relationships.length} 段关系
                   </p>
                 )}
-                <div className="mt-4 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="mt-4 flex gap-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
                   <Button
                     variant="outline"
                     size="sm"
@@ -118,6 +118,7 @@ function CharactersContent() {
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDelete(c)}
+                    aria-label={`删除角色 ${c.name}`}
                   >
                     <Trash2 className="h-3 w-3 text-destructive" />
                   </Button>
