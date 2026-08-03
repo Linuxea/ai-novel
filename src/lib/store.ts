@@ -120,6 +120,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           ...x,
           relationships: x.relationships?.filter((r) => r.targetId !== id),
         })),
+      // 与服务端 deleteCharacter 的级联清理保持一致
+      chapters: s.chapters.map((c) => ({
+        ...c,
+        characterIds: (c.characterIds ?? []).filter((cid) => cid !== id),
+      })),
+      plotNotes: s.plotNotes.map((p) => ({
+        ...p,
+        characterIds: (p.characterIds ?? []).filter((cid) => cid !== id),
+      })),
     })),
 
   upsertWorldLocal: (w) =>

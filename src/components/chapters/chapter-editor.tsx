@@ -51,6 +51,7 @@ export function ChapterEditor({
   const [loaded, setLoaded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const contentRef = useRef("");
+  const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const [dirty, setDirty] = useState(false);
 
   // 大纲内联编辑
@@ -103,26 +104,36 @@ export function ChapterEditor({
     setDirty(true);
   }
 
+  // 保存串行化：自动保存（debounce/blur）与生成后保存可能并发，
+  // 若不排队，后到服务器的旧快照会覆盖新内容（last-write-wins）
   const saveContent = useCallback(
-    async (snapshot: string, silent = false) => {
-      if (!loaded || !chapter) return false;
-      setSaving(true);
-      try {
-        await api.saveChapterContent(projectId, chapterId, snapshot);
-        if (contentRef.current === snapshot) setDirty(false);
-        // 刷新 store 中的字数/状态
-        upsertChapterLocal({
-          ...chapter,
-          wordCount: snapshot.replace(/\s+/g, "").length,
-        });
-        if (!silent) toast.success("已保存");
-        return true;
-      } catch (e) {
-        toast.error((e as Error).message);
-        return false;
-      } finally {
-        setSaving(false);
-      }
+    (snapshot: string, silent = false): Promise<boolean> => {
+      if (!loaded || !chapter) return Promise.resolve(false);
+      const run = saveChainRef.current.then(async (): Promise<boolean> => {
+        setSaving(true);
+        try {
+          await api.saveChapterContent(projectId, chapterId, snapshot);
+          if (contentRef.current === snapshot) setDirty(false);
+          // 刷新 store 中的字数/状态（与服务端 writeChapterContent 的推进规则一致）
+          const latest =
+            useProjectStore.getState().chapters.find((c) => c.id === chapterId) ??
+            chapter;
+          upsertChapterLocal({
+            ...latest,
+            wordCount: snapshot.replace(/\s+/g, "").length,
+            status: latest.status === "outline" ? "drafting" : latest.status,
+          });
+          if (!silent) toast.success("已保存");
+          return true;
+        } catch (e) {
+          toast.error((e as Error).message);
+          return false;
+        } finally {
+          setSaving(false);
+        }
+      });
+      saveChainRef.current = run;
+      return run;
     },
     [chapter, chapterId, loaded, projectId, upsertChapterLocal],
   );
@@ -184,14 +195,9 @@ export function ChapterEditor({
         setDirty(true);
       }
       toast.success("生成完成");
-      // 保存
-      await api.saveChapterContent(projectId, chapterId, acc);
-      upsertChapterLocal({
-        ...chapter!,
-        wordCount: acc.replace(/\s+/g, "").length,
-        status: "drafting",
-      });
-      setDirty(false);
+      // 保存（走同一条串行链，避免与自动保存交错）
+      const saved = await saveContent(acc, true);
+      if (saved) setDirty(false);
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         toast.error((e as Error).message);

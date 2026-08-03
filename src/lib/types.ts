@@ -165,6 +165,9 @@ export type Project = z.infer<typeof ProjectSchema>;
 export const ChatRoleSchema = z.enum(["user", "assistant", "tool", "system"]);
 export type ChatRole = z.infer<typeof ChatRoleSchema>;
 
+/** 聊天历史持久化与注入模型的条数上限（超出后仅保留最近 N 条） */
+export const CHAT_HISTORY_LIMIT = 200;
+
 /** 项目数据聚合（除章节正文） */
 export interface ProjectData {
   project: Project;

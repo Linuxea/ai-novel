@@ -7,6 +7,7 @@ import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { getProject, getProjectData } from "@/lib/storage";
 import { ChatRequestSchema } from "@/lib/api-schemas";
 import { handleRouteError, parseJson } from "@/lib/api-route";
+import { CHAT_HISTORY_LIMIT } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -46,7 +47,9 @@ export async function POST(req: NextRequest) {
       model: getModel(project.aiModel || undefined),
       system: buildSystemPrompt(data),
       temperature: project.temperature ?? 0.8,
-      messages: await convertToModelMessages(messages as never[]),
+      messages: await convertToModelMessages(
+        messages.slice(-CHAT_HISTORY_LIMIT) as never[],
+      ),
       tools: buildTools(projectId),
       stopWhen: stepCountIs(6),
     });

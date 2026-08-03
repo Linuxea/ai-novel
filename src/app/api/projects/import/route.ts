@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createProject, deleteProject, projectDir, projectsDir } from "@/lib/storage";
 import { CreateProjectSchema } from "@/lib/api-schemas";
 import {
+  CHAT_HISTORY_LIMIT,
   ChapterSchema,
   CharacterSchema,
   PlotNoteSchema,
@@ -27,12 +28,14 @@ const ImportProjectSchema = z
   })
   .passthrough();
 
-const JsonImportSchemas: Record<string, z.ZodType<unknown>> = {
+const JsonImportSchemas: Record<string, z.ZodTypeAny> = {
   "worldbuilding.json": z.array(WorldSectionSchema),
   "characters.json": z.array(CharacterSchema),
   "planning.json": z.array(PlotNoteSchema),
   "chapters.json": z.array(ChapterSchema),
-  "chat.json": z.array(z.unknown()).max(200),
+  "chat.json": z
+    .array(z.unknown())
+    .transform((arr) => arr.slice(-CHAT_HISTORY_LIMIT)),
 };
 
 /** 导入项目 zip（由导出功能产生）。返回新项目 id。 */

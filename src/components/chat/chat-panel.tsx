@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { MessageItem } from "@/components/chat/message-item";
 import { api } from "@/lib/api";
 import { useProjectStore } from "@/lib/store";
+import { CHAT_HISTORY_LIMIT } from "@/lib/types";
 
 const SUGGESTIONS = [
   "帮我构思一个故事的开头",
@@ -206,6 +207,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
       {/* 输入区 */}
       <div className="shrink-0 border-t bg-background p-4">
+        {messages.length >= CHAT_HISTORY_LIMIT && (
+          <p className="mx-auto max-w-3xl pb-2 text-xs text-muted-foreground">
+            对话已达 {CHAT_HISTORY_LIMIT} 条上限，最早的消息将自动移除
+          </p>
+        )}
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <Textarea
             value={input}

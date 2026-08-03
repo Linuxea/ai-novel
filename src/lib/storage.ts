@@ -1,10 +1,12 @@
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { env } from "@/env";
 import {
+  CHAT_HISTORY_LIMIT,
   ChapterSchema,
   CharacterSchema,
   PlotNoteSchema,
@@ -110,6 +112,41 @@ function isNodeError(e: unknown): e is NodeJS.ErrnoException {
   return typeof e === "object" && e !== null && "code" in e;
 }
 
+/** ===== 项目级互斥锁 ===== */
+/**
+ * 所有写操作均为「读-改-写」，并发时会互相覆盖。
+ * 这里按 projectId 串行化同一项目的写操作；
+ * 借助 AsyncLocalStorage 实现可重入——外层已持锁时（如 upsert 内部
+ * 再调用 create/update 的加锁版本）直接执行，不会死锁。
+ */
+const projectLocks = new Map<string, Promise<void>>();
+const lockContext = new AsyncLocalStorage<ReadonlySet<string>>();
+
+async function withProjectLock<T>(
+  projectId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const held = lockContext.getStore();
+  if (held?.has(projectId)) return fn();
+
+  const prev = projectLocks.get(projectId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = prev.then(() => current);
+  projectLocks.set(projectId, tail);
+  await prev;
+  try {
+    return await lockContext.run(new Set(held).add(projectId), fn);
+  } finally {
+    release();
+    if (projectLocks.get(projectId) === tail) {
+      projectLocks.delete(projectId);
+    }
+  }
+}
+
 /** ===== 项目 ===== */
 export async function listProjects(): Promise<Project[]> {
   await touchDir(projectsDir());
@@ -175,7 +212,7 @@ export async function createProject(
   return project;
 }
 
-export async function updateProject(
+async function updateProjectImpl(
   projectId: string,
   patch: Partial<Project>,
 ): Promise<Project> {
@@ -191,7 +228,7 @@ export async function updateProject(
   return updated;
 }
 
-export async function deleteProject(projectId: string): Promise<void> {
+async function deleteProjectImpl(projectId: string): Promise<void> {
   const dir = projectDir(projectId);
   if (await fileExists(dir)) {
     await fs.rm(dir, { recursive: true, force: true });
@@ -235,7 +272,7 @@ export async function listCharacters(projectId: string): Promise<Character[]> {
   return readList<Character>(projectId, "characters.json", CharacterSchema);
 }
 
-export async function createCharacter(
+async function createCharacterImpl(
   projectId: string,
   input: Partial<Character> & { name: string },
 ): Promise<Character> {
@@ -264,7 +301,7 @@ export async function createCharacter(
   return created;
 }
 
-export async function updateCharacter(
+async function updateCharacterImpl(
   projectId: string,
   characterId: string,
   input: Partial<Character>,
@@ -294,7 +331,7 @@ export async function updateCharacter(
   return updated;
 }
 
-export async function upsertCharacter(
+async function upsertCharacterImpl(
   projectId: string,
   input: Partial<Character> & { name: string },
 ): Promise<Character> {
@@ -304,13 +341,13 @@ export async function upsertCharacter(
     : list.find((c) => c.name === input.name);
 
   if (existing) {
-    return updateCharacter(projectId, existing.id, input);
+    return updateCharacterImpl(projectId, existing.id, input);
   }
 
-  return createCharacter(projectId, input);
+  return createCharacterImpl(projectId, input);
 }
 
-export async function deleteCharacter(
+async function deleteCharacterImpl(
   projectId: string,
   characterId: string,
 ): Promise<void> {
@@ -341,7 +378,7 @@ export async function deleteCharacter(
   await touchProject(projectId);
 }
 
-export async function updateCharacterLayout(
+async function updateCharacterLayoutImpl(
   projectId: string,
   characterId: string,
   position: { x: number; y: number },
@@ -364,7 +401,7 @@ export interface RelationshipInput {
   description?: string;
 }
 
-export async function upsertRelationship(
+async function upsertRelationshipImpl(
   projectId: string,
   characterId: string,
   input: RelationshipInput,
@@ -420,7 +457,7 @@ export async function upsertRelationship(
   return owner;
 }
 
-export async function deleteRelationship(
+async function deleteRelationshipImpl(
   projectId: string,
   characterId: string,
   relationshipId: string,
@@ -455,11 +492,14 @@ export async function listWorldSections(
   );
 }
 
-export async function createWorldSection(
+type WorldSectionInput = Partial<WorldSection> & {
+  title: string;
+  category: WorldSection["category"];
+} & { content?: string };
+
+async function createWorldSectionImpl(
   projectId: string,
-  input: Partial<WorldSection> & { title: string; category: WorldSection["category"] } & {
-    content?: string;
-  },
+  input: WorldSectionInput,
 ): Promise<WorldSection> {
   const list = await listWorldSections(projectId);
   const created: WorldSection = {
@@ -475,7 +515,7 @@ export async function createWorldSection(
   return created;
 }
 
-export async function updateWorldSection(
+async function updateWorldSectionImpl(
   projectId: string,
   sectionId: string,
   input: Partial<WorldSection>,
@@ -496,21 +536,19 @@ export async function updateWorldSection(
   return updated;
 }
 
-export async function upsertWorldSection(
+async function upsertWorldSectionImpl(
   projectId: string,
-  input: Partial<WorldSection> & { title: string; category: WorldSection["category"] } & {
-    content?: string;
-  },
+  input: WorldSectionInput,
 ): Promise<WorldSection> {
   const list = await listWorldSections(projectId);
   const existing = input.id ? list.find((w) => w.id === input.id) : undefined;
   if (existing) {
-    return updateWorldSection(projectId, existing.id, input);
+    return updateWorldSectionImpl(projectId, existing.id, input);
   }
-  return createWorldSection(projectId, input);
+  return createWorldSectionImpl(projectId, input);
 }
 
-export async function deleteWorldSection(
+async function deleteWorldSectionImpl(
   projectId: string,
   sectionId: string,
 ): Promise<void> {
@@ -531,7 +569,7 @@ export async function listPlotNotes(projectId: string): Promise<PlotNote[]> {
   return readList<PlotNote>(projectId, "planning.json", PlotNoteSchema);
 }
 
-export async function createPlotNote(
+async function createPlotNoteImpl(
   projectId: string,
   input: Partial<PlotNote> & { title: string; type: PlotNote["type"] },
 ): Promise<PlotNote> {
@@ -551,7 +589,7 @@ export async function createPlotNote(
   return created;
 }
 
-export async function updatePlotNote(
+async function updatePlotNoteImpl(
   projectId: string,
   noteId: string,
   input: Partial<PlotNote>,
@@ -572,19 +610,19 @@ export async function updatePlotNote(
   return updated;
 }
 
-export async function upsertPlotNote(
+async function upsertPlotNoteImpl(
   projectId: string,
   input: Partial<PlotNote> & { title: string; type: PlotNote["type"] },
 ): Promise<PlotNote> {
   const list = await listPlotNotes(projectId);
   const existing = input.id ? list.find((p) => p.id === input.id) : undefined;
   if (existing) {
-    return updatePlotNote(projectId, existing.id, input);
+    return updatePlotNoteImpl(projectId, existing.id, input);
   }
-  return createPlotNote(projectId, input);
+  return createPlotNoteImpl(projectId, input);
 }
 
-export async function deletePlotNote(
+async function deletePlotNoteImpl(
   projectId: string,
   noteId: string,
 ): Promise<void> {
@@ -606,15 +644,20 @@ export async function listChapters(projectId: string): Promise<Chapter[]> {
   return list.sort((a, b) => a.order - b.order);
 }
 
-export async function createChapter(
+async function createChapterImpl(
   projectId: string,
   input: Partial<Chapter> & { title: string },
 ): Promise<Chapter> {
   const list = await listChapters(projectId);
   const maxOrder = list.reduce((m, c) => Math.max(m, c.order), 0);
+  let order = input.order ?? maxOrder + 1;
+  // 非法位次（非整数、越界）一律追加到末尾
+  if (!Number.isInteger(order) || order < 1 || order > maxOrder + 1) {
+    order = maxOrder + 1;
+  }
   const created: Chapter = {
     id: nanoid(12),
-    order: input.order ?? maxOrder + 1,
+    order,
     title: input.title,
     outline: input.outline ?? "",
     characterIds: input.characterIds ?? [],
@@ -623,13 +666,17 @@ export async function createChapter(
     wordCount: input.wordCount ?? 0,
     updatedAt: now(),
   };
-  list.push(created);
-  await writeList(projectId, "chapters.json", list);
+  // 指定位次插入时，将位次 >= order 的既有章节顺移一位，保持 order 连续无冲突
+  const shifted = list.map((c) =>
+    c.order >= order ? { ...c, order: c.order + 1 } : c,
+  );
+  shifted.push(created);
+  await writeList(projectId, "chapters.json", shifted);
   await touchProject(projectId);
   return created;
 }
 
-export async function updateChapter(
+async function updateChapterImpl(
   projectId: string,
   chapterId: string,
   input: Partial<Chapter>,
@@ -650,19 +697,19 @@ export async function updateChapter(
   return updated;
 }
 
-export async function upsertChapter(
+async function upsertChapterImpl(
   projectId: string,
   input: Partial<Chapter> & { title: string },
 ): Promise<Chapter> {
   const list = await listChapters(projectId);
   const existing = input.id ? list.find((c) => c.id === input.id) : undefined;
   if (existing) {
-    return updateChapter(projectId, existing.id, input);
+    return updateChapterImpl(projectId, existing.id, input);
   }
-  return createChapter(projectId, input);
+  return createChapterImpl(projectId, input);
 }
 
-export async function deleteChapter(
+async function deleteChapterImpl(
   projectId: string,
   chapterId: string,
 ): Promise<void> {
@@ -692,7 +739,7 @@ export async function readChapterContent(
   return fs.readFile(file, "utf-8");
 }
 
-export async function writeChapterContent(
+async function writeChapterContentImpl(
   projectId: string,
   chapterId: string,
   content: string,
@@ -703,11 +750,16 @@ export async function writeChapterContent(
   }
   const file = chapterFilePath(projectId, chapterId);
   await writeText(file, content);
-  // 更新字数
+  // 更新字数；仅「大纲」状态在写入正文后推进为「写作中」，已完成状态不回退
   const wordCount = content.replace(/\s+/g, "").length;
   const next = list.map((c) =>
     c.id === chapterId
-      ? { ...c, wordCount, updatedAt: now(), status: "drafting" as const }
+      ? {
+          ...c,
+          wordCount,
+          updatedAt: now(),
+          status: c.status === "outline" ? ("drafting" as const) : c.status,
+        }
       : c,
   );
   await writeList(projectId, "chapters.json", next);
@@ -720,15 +772,11 @@ export async function readChat(projectId: string): Promise<unknown[]> {
   return readList<unknown>(projectId, "chat.json", z.unknown());
 }
 
-export async function writeChat(
+async function writeChatImpl(
   projectId: string,
   messages: unknown[],
 ): Promise<void> {
-  await writeList(projectId, "chat.json", messages);
-}
-
-export async function clearChat(projectId: string): Promise<void> {
-  await writeChat(projectId, []);
+  await writeList(projectId, "chat.json", messages.slice(-CHAT_HISTORY_LIMIT));
 }
 
 /** ===== 聚合 ===== */
@@ -754,4 +802,201 @@ async function touchProject(projectId: string): Promise<void> {
       updatedAt: now(),
     });
   }
+}
+
+/** ===== 写操作（项目级互斥，串行执行） ===== */
+export function updateProject(
+  projectId: string,
+  patch: Partial<Project>,
+): Promise<Project> {
+  return withProjectLock(projectId, () => updateProjectImpl(projectId, patch));
+}
+
+export function deleteProject(projectId: string): Promise<void> {
+  return withProjectLock(projectId, () => deleteProjectImpl(projectId));
+}
+
+export function createCharacter(
+  projectId: string,
+  input: Partial<Character> & { name: string },
+): Promise<Character> {
+  return withProjectLock(projectId, () => createCharacterImpl(projectId, input));
+}
+
+export function updateCharacter(
+  projectId: string,
+  characterId: string,
+  input: Partial<Character>,
+): Promise<Character> {
+  return withProjectLock(projectId, () =>
+    updateCharacterImpl(projectId, characterId, input),
+  );
+}
+
+export function upsertCharacter(
+  projectId: string,
+  input: Partial<Character> & { name: string },
+): Promise<Character> {
+  return withProjectLock(projectId, () => upsertCharacterImpl(projectId, input));
+}
+
+export function deleteCharacter(
+  projectId: string,
+  characterId: string,
+): Promise<void> {
+  return withProjectLock(projectId, () =>
+    deleteCharacterImpl(projectId, characterId),
+  );
+}
+
+export function updateCharacterLayout(
+  projectId: string,
+  characterId: string,
+  position: { x: number; y: number },
+): Promise<void> {
+  return withProjectLock(projectId, () =>
+    updateCharacterLayoutImpl(projectId, characterId, position),
+  );
+}
+
+export function upsertRelationship(
+  projectId: string,
+  characterId: string,
+  input: RelationshipInput,
+): Promise<Character | null> {
+  return withProjectLock(projectId, () =>
+    upsertRelationshipImpl(projectId, characterId, input),
+  );
+}
+
+export function deleteRelationship(
+  projectId: string,
+  characterId: string,
+  relationshipId: string,
+): Promise<void> {
+  return withProjectLock(projectId, () =>
+    deleteRelationshipImpl(projectId, characterId, relationshipId),
+  );
+}
+
+export function createWorldSection(
+  projectId: string,
+  input: WorldSectionInput,
+): Promise<WorldSection> {
+  return withProjectLock(projectId, () =>
+    createWorldSectionImpl(projectId, input),
+  );
+}
+
+export function updateWorldSection(
+  projectId: string,
+  sectionId: string,
+  input: Partial<WorldSection>,
+): Promise<WorldSection> {
+  return withProjectLock(projectId, () =>
+    updateWorldSectionImpl(projectId, sectionId, input),
+  );
+}
+
+export function upsertWorldSection(
+  projectId: string,
+  input: WorldSectionInput,
+): Promise<WorldSection> {
+  return withProjectLock(projectId, () =>
+    upsertWorldSectionImpl(projectId, input),
+  );
+}
+
+export function deleteWorldSection(
+  projectId: string,
+  sectionId: string,
+): Promise<void> {
+  return withProjectLock(projectId, () =>
+    deleteWorldSectionImpl(projectId, sectionId),
+  );
+}
+
+export function createPlotNote(
+  projectId: string,
+  input: Partial<PlotNote> & { title: string; type: PlotNote["type"] },
+): Promise<PlotNote> {
+  return withProjectLock(projectId, () => createPlotNoteImpl(projectId, input));
+}
+
+export function updatePlotNote(
+  projectId: string,
+  noteId: string,
+  input: Partial<PlotNote>,
+): Promise<PlotNote> {
+  return withProjectLock(projectId, () =>
+    updatePlotNoteImpl(projectId, noteId, input),
+  );
+}
+
+export function upsertPlotNote(
+  projectId: string,
+  input: Partial<PlotNote> & { title: string; type: PlotNote["type"] },
+): Promise<PlotNote> {
+  return withProjectLock(projectId, () => upsertPlotNoteImpl(projectId, input));
+}
+
+export function deletePlotNote(
+  projectId: string,
+  noteId: string,
+): Promise<void> {
+  return withProjectLock(projectId, () => deletePlotNoteImpl(projectId, noteId));
+}
+
+export function createChapter(
+  projectId: string,
+  input: Partial<Chapter> & { title: string },
+): Promise<Chapter> {
+  return withProjectLock(projectId, () => createChapterImpl(projectId, input));
+}
+
+export function updateChapter(
+  projectId: string,
+  chapterId: string,
+  input: Partial<Chapter>,
+): Promise<Chapter> {
+  return withProjectLock(projectId, () =>
+    updateChapterImpl(projectId, chapterId, input),
+  );
+}
+
+export function upsertChapter(
+  projectId: string,
+  input: Partial<Chapter> & { title: string },
+): Promise<Chapter> {
+  return withProjectLock(projectId, () => upsertChapterImpl(projectId, input));
+}
+
+export function deleteChapter(
+  projectId: string,
+  chapterId: string,
+): Promise<void> {
+  return withProjectLock(projectId, () =>
+    deleteChapterImpl(projectId, chapterId),
+  );
+}
+
+export function writeChapterContent(
+  projectId: string,
+  chapterId: string,
+  content: string,
+): Promise<void> {
+  return withProjectLock(projectId, () =>
+    writeChapterContentImpl(projectId, chapterId, content),
+  );
+}
+
+export function writeChat(
+  projectId: string,
+  messages: unknown[],
+): Promise<void> {
+  return withProjectLock(projectId, () => writeChatImpl(projectId, messages));
+}
+
+export function clearChat(projectId: string): Promise<void> {
+  return withProjectLock(projectId, () => writeChatImpl(projectId, []));
 }

@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     headers: {
       "Content-Type": "application/zip",
       // 同时提供 ASCII filename 与 UTF-8 filename* 以兼容中文书名
-      "Content-Disposition": `attachment; filename="${project.id}.zip"; filename*=UTF-8''${encoded}`,
+      "Content-Disposition": `attachment; filename="${project.id}.zip"; filename*=UTF-8''${encoded}.zip`,
     },
   });
 }

@@ -118,13 +118,13 @@ export const SaveChapterContentSchema = z
   .strict();
 
 export const SaveChatSchema = z
-  .object({ messages: z.array(z.unknown()).max(200) })
+  .object({ messages: z.array(z.unknown()) })
   .strict();
 
 export const ChatRequestSchema = z
   .object({
     projectId: NonEmptyString,
-    messages: z.array(z.unknown()).max(200),
+    messages: z.array(z.unknown()),
     id: z.string().optional(),
     trigger: z.string().optional(),
     messageId: z.string().optional(),
