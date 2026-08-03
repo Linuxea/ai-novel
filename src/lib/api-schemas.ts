@@ -125,5 +125,8 @@ export const ChatRequestSchema = z
   .object({
     projectId: NonEmptyString,
     messages: z.array(z.unknown()).max(200),
+    id: z.string().optional(),
+    trigger: z.string().optional(),
+    messageId: z.string().optional(),
   })
   .strict();
