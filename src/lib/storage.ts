@@ -1,5 +1,6 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
@@ -9,17 +10,26 @@ import {
   CHAT_HISTORY_LIMIT,
   ChapterSchema,
   CharacterSchema,
+  ConsistencyReportSchema,
   PlotNoteSchema,
   ProjectSchema,
   WorldSectionSchema,
   type Chapter,
   type Character,
+  type ConsistencyReport,
   type PlotNote,
   type Project,
   type ProjectData,
   type RelationshipType,
   type WorldSection,
+  type BeatSheet,
 } from "@/lib/types";
+import {
+  chunkText,
+  type RagIndexRecord,
+  type RagMeta,
+  type RagSource,
+} from "@/lib/rag/chunk";
 
 /** ===== 路径工具 ===== */
 function rootDir(): string {
@@ -49,6 +59,11 @@ function chaptersDir(projectId: string): string {
 function chapterFilePath(projectId: string, chapterId: string): string {
   assertSafeId(chapterId);
   return path.join(chaptersDir(projectId), `${chapterId}.md`);
+}
+
+function beatSheetFilePath(projectId: string, chapterId: string): string {
+  assertSafeId(chapterId);
+  return path.join(chaptersDir(projectId), `${chapterId}.beats.json`);
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -100,6 +115,11 @@ async function touchDir(dir: string): Promise<void> {
 }
 
 export const now = () => new Date().toISOString();
+
+/** 正文内容指纹（sha1 前 16 位），用于摘要/检查报告的陈旧检测 */
+export function hashContent(content: string): string {
+  return createHash("sha1").update(content, "utf-8").digest("hex").slice(0, 16);
+}
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -199,6 +219,12 @@ export async function createProject(
     status: "drafting",
     aiModel: input.aiModel ?? "",
     temperature: input.temperature ?? 0.8,
+    ragMode: "off",
+    ragTopK: 6,
+    generateStrategy: "auto",
+    multiStepCritique: true,
+    multiStepRewrite: false,
+    autoResolveForeshadow: false,
     createdAt: ts,
     updatedAt: ts,
   };
@@ -512,6 +538,17 @@ async function createWorldSectionImpl(
   list.push(created);
   await writeList(projectId, "worldbuilding.json", list);
   await touchProject(projectId);
+  try {
+    await upsertOwnerChunksImpl(
+      projectId,
+      "world",
+      created.id,
+      created.title,
+      chunkText(`${created.title}\n${created.content}`),
+    );
+  } catch {
+    // RAG 索引失败不影响主写
+  }
   return created;
 }
 
@@ -533,6 +570,17 @@ async function updateWorldSectionImpl(
   const next = list.map((w) => (w.id === existing.id ? updated : w));
   await writeList(projectId, "worldbuilding.json", next);
   await touchProject(projectId);
+  try {
+    await upsertOwnerChunksImpl(
+      projectId,
+      "world",
+      updated.id,
+      updated.title,
+      chunkText(`${updated.title}\n${updated.content}`),
+    );
+  } catch {
+    // RAG 索引失败不影响主写
+  }
   return updated;
 }
 
@@ -562,6 +610,11 @@ async function deleteWorldSectionImpl(
     list.filter((w) => w.id !== sectionId),
   );
   await touchProject(projectId);
+  try {
+    await deleteOwnerChunksImpl(projectId, sectionId);
+  } catch {
+    // RAG 索引失败不影响主写
+  }
 }
 
 /** ===== 剧情规划 ===== */
@@ -581,11 +634,26 @@ async function createPlotNoteImpl(
     content: input.content ?? "",
     status: input.status ?? "idea",
     characterIds: input.characterIds ?? [],
+    expectedPlantChapter: input.expectedPlantChapter,
+    expectedResolveChapter: input.expectedResolveChapter,
     updatedAt: now(),
   };
   list.push(created);
   await writeList(projectId, "planning.json", list);
   await touchProject(projectId);
+  if (created.content.trim()) {
+    try {
+      await upsertOwnerChunksImpl(
+        projectId,
+        "plot",
+        created.id,
+        created.title,
+        [`${created.title}\n${created.content}`],
+      );
+    } catch {
+      // RAG 索引失败不影响主写
+    }
+  }
   return created;
 }
 
@@ -607,6 +675,17 @@ async function updatePlotNoteImpl(
   const next = list.map((p) => (p.id === existing.id ? updated : p));
   await writeList(projectId, "planning.json", next);
   await touchProject(projectId);
+  try {
+    await upsertOwnerChunksImpl(
+      projectId,
+      "plot",
+      updated.id,
+      updated.title,
+      updated.content.trim() ? [`${updated.title}\n${updated.content}`] : [],
+    );
+  } catch {
+    // RAG 索引失败不影响主写
+  }
   return updated;
 }
 
@@ -636,6 +715,11 @@ async function deletePlotNoteImpl(
     list.filter((p) => p.id !== noteId),
   );
   await touchProject(projectId);
+  try {
+    await deleteOwnerChunksImpl(projectId, noteId);
+  } catch {
+    // RAG 索引失败不影响主写
+  }
 }
 
 /** ===== 章节 ===== */
@@ -665,6 +749,9 @@ async function createChapterImpl(
     status: input.status ?? "outline",
     wordCount: input.wordCount ?? 0,
     updatedAt: now(),
+    contentHash: "",
+    summary: "",
+    summaryOfContentHash: "",
   };
   // 指定位次插入时，将位次 >= order 的既有章节顺移一位，保持 order 连续无冲突
   const shifted = list.map((c) =>
@@ -723,7 +810,19 @@ async function deleteChapterImpl(
   await writeList(projectId, "chapters.json", reordered);
   const file = chapterFilePath(projectId, chapterId);
   if (await fileExists(file)) await fs.unlink(file);
+  const beatsFile = beatSheetFilePath(projectId, chapterId);
+  if (await fileExists(beatsFile)) await fs.unlink(beatsFile).catch(() => {});
   await touchProject(projectId);
+  try {
+    await deleteOwnerChunksImpl(projectId, chapterId);
+  } catch {
+    // RAG 索引失败不影响主写
+  }
+  try {
+    await deleteCheckImpl(projectId, chapterId);
+  } catch {
+    // 检查报告删除失败不影响主写
+  }
 }
 
 export async function readChapterContent(
@@ -739,6 +838,29 @@ export async function readChapterContent(
   return fs.readFile(file, "utf-8");
 }
 
+/** 读取多步生成的 beat sheet（续写时可复用） */
+export async function readBeatSheet(
+  projectId: string,
+  chapterId: string,
+): Promise<BeatSheet | null> {
+  try {
+    const raw = await fs.readFile(beatSheetFilePath(projectId, chapterId), "utf-8");
+    return JSON.parse(raw) as BeatSheet;
+  } catch (e) {
+    if (isNodeError(e) && e.code === "ENOENT") return null;
+    throw e;
+  }
+}
+
+/** 写入 beat sheet（多步生成规划步完成后落盘） */
+export async function writeBeatSheet(
+  projectId: string,
+  chapterId: string,
+  sheet: BeatSheet,
+): Promise<void> {
+  await writeJson(beatSheetFilePath(projectId, chapterId), sheet);
+}
+
 async function writeChapterContentImpl(
   projectId: string,
   chapterId: string,
@@ -752,11 +874,13 @@ async function writeChapterContentImpl(
   await writeText(file, content);
   // 更新字数；仅「大纲」状态在写入正文后推进为「写作中」，已完成状态不回退
   const wordCount = content.replace(/\s+/g, "").length;
+  const contentHash = hashContent(content);
   const next = list.map((c) =>
     c.id === chapterId
       ? {
           ...c,
           wordCount,
+          contentHash,
           updatedAt: now(),
           status: c.status === "outline" ? ("drafting" as const) : c.status,
         }
@@ -764,6 +888,21 @@ async function writeChapterContentImpl(
   );
   await writeList(projectId, "chapters.json", next);
   await touchProject(projectId);
+  const ch = next.find((c) => c.id === chapterId);
+  if (ch && content.trim()) {
+    try {
+      await upsertOwnerChunksImpl(
+        projectId,
+        "chapter",
+        chapterId,
+        `第${ch.order}章《${ch.title}》`,
+        chunkText(content),
+        ch.order,
+      );
+    } catch {
+      // RAG 索引失败不影响正文写入
+    }
+  }
 }
 
 /** ===== 对话历史 ===== */
@@ -777,6 +916,63 @@ async function writeChatImpl(
   messages: unknown[],
 ): Promise<void> {
   await writeList(projectId, "chat.json", messages.slice(-CHAT_HISTORY_LIMIT));
+}
+
+/** ===== 一致性检查报告 ===== */
+type ChecksMap = Record<string, ConsistencyReport>;
+
+async function readChecksMap(
+  projectId: string,
+): Promise<ChecksMap> {
+  try {
+    const raw = await fs.readFile(
+      path.join(projectDir(projectId), "checks.json"),
+      "utf-8",
+    );
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const result: ChecksMap = {};
+    for (const [k, v] of Object.entries(
+      parsed as Record<string, unknown>,
+    )) {
+      const r = ConsistencyReportSchema.safeParse(v);
+      if (r.success) result[k] = r.data;
+    }
+    return result;
+  } catch (e) {
+    if (isNodeError(e) && e.code === "ENOENT") return {};
+    throw e;
+  }
+}
+
+export async function getCheck(
+  projectId: string,
+  chapterId: string,
+): Promise<ConsistencyReport | null> {
+  const map = await readChecksMap(projectId);
+  return map[chapterId] ?? null;
+}
+
+export async function saveCheck(
+  projectId: string,
+  chapterId: string,
+  report: ConsistencyReport,
+): Promise<void> {
+  return withProjectLock(projectId, async () => {
+    const map = await readChecksMap(projectId);
+    map[chapterId] = report;
+    await writeJson(path.join(projectDir(projectId), "checks.json"), map);
+  });
+}
+
+async function deleteCheckImpl(
+  projectId: string,
+  chapterId: string,
+): Promise<void> {
+  const map = await readChecksMap(projectId);
+  if (!(chapterId in map)) return;
+  delete map[chapterId];
+  await writeJson(path.join(projectDir(projectId), "checks.json"), map);
 }
 
 /** ===== 聚合 ===== */
@@ -802,6 +998,197 @@ async function touchProject(projectId: string): Promise<void> {
       updatedAt: now(),
     });
   }
+}
+
+/** ===== RAG 索引 ===== */
+function ragDir(projectId: string): string {
+  return path.join(/*turbopackIgnore: true*/ projectDir(projectId), "rag");
+}
+function ragIndexPath(projectId: string): string {
+  return path.join(/*turbopackIgnore: true*/ ragDir(projectId), "index.json");
+}
+function ragMetaPath(projectId: string): string {
+  return path.join(/*turbopackIgnore: true*/ ragDir(projectId), "meta.json");
+}
+
+export async function readRagIndex(
+  projectId: string,
+): Promise<RagIndexRecord[]> {
+  try {
+    const raw = await fs.readFile(ragIndexPath(projectId), "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as RagIndexRecord[]) : [];
+  } catch (e) {
+    if (isNodeError(e) && e.code === "ENOENT") return [];
+    throw e;
+  }
+}
+
+export async function readRagMeta(
+  projectId: string,
+): Promise<RagMeta | null> {
+  return readJson<RagMeta | null>(ragMetaPath(projectId), null);
+}
+
+async function writeRagIndexImpl(
+  projectId: string,
+  records: RagIndexRecord[],
+): Promise<void> {
+  await writeJson(ragIndexPath(projectId), records);
+  await writeJson(ragMetaPath(projectId), {
+    mode: "bm25",
+    builtAt: now(),
+    chunkCount: records.length,
+  } satisfies RagMeta);
+}
+
+export async function clearRagIndex(projectId: string): Promise<void> {
+  await writeRagIndexImpl(projectId, []);
+}
+
+/** 用一组文本片段替换某 owner 在索引中的全部旧记录 */
+async function upsertOwnerChunksImpl(
+  projectId: string,
+  source: RagSource,
+  ownerId: string,
+  ownerTitle: string,
+  texts: string[],
+  chapterOrder?: number,
+): Promise<void> {
+  const records = await readRagIndex(projectId);
+  const kept = records.filter((r) => r.chunk.ownerId !== ownerId);
+  const ts = now();
+  let idx = 0;
+  for (const text of texts) {
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+    kept.push({
+      chunk: {
+        id: `${source}:${ownerId}:${idx}`,
+        source,
+        ownerId,
+        ownerTitle,
+        chapterOrder,
+        text: trimmed,
+      },
+      updatedAt: ts,
+    });
+    idx++;
+  }
+  await writeRagIndexImpl(projectId, kept);
+}
+
+async function deleteOwnerChunksImpl(
+  projectId: string,
+  ownerId: string,
+): Promise<void> {
+  const records = await readRagIndex(projectId);
+  const kept = records.filter((r) => r.chunk.ownerId !== ownerId);
+  if (kept.length !== records.length) {
+    await writeRagIndexImpl(projectId, kept);
+  }
+}
+
+/** 全量重建索引：遍历章节正文/摘要、世界观、剧情 */
+async function reindexProjectImpl(projectId: string): Promise<{
+  chunkCount: number;
+}> {
+  const ts = now();
+  const records: RagIndexRecord[] = [];
+
+  const chapters = await listChapters(projectId);
+  for (const c of chapters) {
+    const content = await readChapterContent(projectId, c.id);
+    for (const text of chunkText(content)) {
+      if (!text.trim()) continue;
+      records.push({
+        chunk: {
+          id: `chapter:${c.id}:${records.length}`,
+          source: "chapter",
+          ownerId: c.id,
+          ownerTitle: `第${c.order}章《${c.title}》`,
+          chapterOrder: c.order,
+          text,
+        },
+        updatedAt: ts,
+      });
+    }
+    if (c.summary && c.summary.trim()) {
+      records.push({
+        chunk: {
+          id: `summary:${c.id}:${records.length}`,
+          source: "summary",
+          ownerId: c.id,
+          ownerTitle: `第${c.order}章《${c.title}》摘要`,
+          chapterOrder: c.order,
+          text: c.summary.trim(),
+        },
+        updatedAt: ts,
+      });
+    }
+  }
+
+  for (const w of await listWorldSections(projectId)) {
+    for (const text of chunkText(`${w.title}\n${w.content}`)) {
+      records.push({
+        chunk: {
+          id: `world:${w.id}:${records.length}`,
+          source: "world",
+          ownerId: w.id,
+          ownerTitle: w.title,
+          text,
+        },
+        updatedAt: ts,
+      });
+    }
+  }
+
+  for (const p of await listPlotNotes(projectId)) {
+    if (!p.content.trim()) continue;
+    records.push({
+      chunk: {
+        id: `plot:${p.id}:${records.length}`,
+        source: "plot",
+        ownerId: p.id,
+        ownerTitle: p.title,
+        text: `${p.title}\n${p.content}`,
+      },
+      updatedAt: ts,
+    });
+  }
+
+  await writeRagIndexImpl(projectId, records);
+  return { chunkCount: records.length };
+}
+
+/**
+ * 为索引中的全部 chunk 计算并写入向量。
+ * embedFn 由调用方注入（rebuild 路由传入 embedder），避免 storage 直接依赖 AI 层。
+ */
+export async function embedRagIndex(
+  projectId: string,
+  embedFn: (texts: string[]) => Promise<number[][]>,
+): Promise<{ embedded: number; failed: number }> {
+  return withProjectLock(projectId, async () => {
+    const records = await readRagIndex(projectId);
+    if (records.length === 0) return { embedded: 0, failed: 0 };
+    const texts = records.map((r) => r.chunk.text);
+    const embeddings = await embedFn(texts);
+    const ts = now();
+    let embedded = 0;
+    let failed = 0;
+    const next = records.map((r, i) => {
+      const emb = embeddings[i];
+      if (emb && emb.length > 0) {
+        embedded++;
+        return { ...r, embedding: emb, embeddedAt: ts };
+      }
+      failed++;
+      return r;
+    });
+    await writeRagIndexImpl(projectId, next);
+    return { embedded, failed };
+  });
 }
 
 /** ===== 写操作（项目级互斥，串行执行） ===== */
@@ -990,6 +1377,46 @@ export function writeChapterContent(
   );
 }
 
+/**
+ * 写入章节摘要。仅更新 summary / summaryOfContentHash / summaryGeneratedAt，
+ * 不刷新 updatedAt（摘要生成不应让章节列表误显示为"刚编辑"），也不 touchProject。
+ */
+export async function updateChapterSummary(
+  projectId: string,
+  chapterId: string,
+  summary: string,
+  contentHash: string,
+): Promise<Chapter> {
+  return withProjectLock(projectId, async () => {
+    const list = await listChapters(projectId);
+    const existing = list.find((c) => c.id === chapterId);
+    if (!existing) throw new NotFoundError("章节不存在");
+    const updated: Chapter = {
+      ...existing,
+      summary,
+      summaryOfContentHash: contentHash,
+      summaryGeneratedAt: now(),
+    };
+    const next = list.map((c) => (c.id === chapterId ? updated : c));
+    await writeList(projectId, "chapters.json", next);
+    if (summary.trim()) {
+      try {
+        await upsertOwnerChunksImpl(
+          projectId,
+          "summary",
+          chapterId,
+          `第${updated.order}章《${updated.title}》摘要`,
+          [summary],
+          updated.order,
+        );
+      } catch {
+        // RAG 索引失败不影响摘要写入
+      }
+    }
+    return updated;
+  });
+}
+
 export function writeChat(
   projectId: string,
   messages: unknown[],
@@ -999,4 +1426,11 @@ export function writeChat(
 
 export function clearChat(projectId: string): Promise<void> {
   return withProjectLock(projectId, () => writeChatImpl(projectId, []));
+}
+
+/** 全量重建 RAG 索引（设置页"重建索引"按钮 / 首次开启 RAG 时调用） */
+export function reindexProject(
+  projectId: string,
+): Promise<{ chunkCount: number }> {
+  return withProjectLock(projectId, () => reindexProjectImpl(projectId));
 }

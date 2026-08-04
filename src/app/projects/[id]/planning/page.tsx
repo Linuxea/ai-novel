@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Compass } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -33,6 +33,10 @@ import {
   type PlotStatus,
   type PlotType,
 } from "@/lib/types";
+import {
+  classifyDuePlotNotes,
+  inferCurrentOrder,
+} from "@/lib/plot-due";
 
 const TYPES = Object.entries(PLOT_TYPE_META) as [PlotType, { label: string; description: string }][];
 const STATUSES = Object.entries(PLOT_STATUS_LABEL) as [PlotStatus, string][];
@@ -44,11 +48,12 @@ const STATUS_BADGE_CLASS: Record<PlotStatus, string> = {
 };
 
 export default function PlanningPage() {
-  const { project, plotNotes, upsertPlotNoteLocal, removePlotNoteLocal } =
+  const { project, plotNotes, chapters, upsertPlotNoteLocal, removePlotNoteLocal } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
         plotNotes: s.plotNotes,
+        chapters: s.chapters,
         upsertPlotNoteLocal: s.upsertPlotNoteLocal,
         removePlotNoteLocal: s.removePlotNoteLocal,
       })),
@@ -57,9 +62,16 @@ export default function PlanningPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PlotNote | null>(null);
-  const [form, setForm] = useState({
-    type: "plan" as PlotType,
-    status: "idea" as PlotStatus,
+  const [form, setForm] = useState<{
+    type: PlotType;
+    status: PlotStatus;
+    title: string;
+    content: string;
+    expectedPlantChapter?: number;
+    expectedResolveChapter?: number;
+  }>({
+    type: "plan",
+    status: "idea",
     title: "",
     content: "",
   });
@@ -67,7 +79,14 @@ export default function PlanningPage() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ type: "plan", status: "idea", title: "", content: "" });
+    setForm({
+      type: "plan",
+      status: "idea",
+      title: "",
+      content: "",
+      expectedPlantChapter: undefined,
+      expectedResolveChapter: undefined,
+    });
     setDialogOpen(true);
   }
   function openEdit(p: PlotNote) {
@@ -77,6 +96,8 @@ export default function PlanningPage() {
       status: p.status,
       title: p.title,
       content: p.content,
+      expectedPlantChapter: p.expectedPlantChapter,
+      expectedResolveChapter: p.expectedResolveChapter,
     });
     setDialogOpen(true);
   }
@@ -123,6 +144,14 @@ export default function PlanningPage() {
 
   const pendingCount = plotNotes.filter((p) => p.status !== "resolved").length;
 
+  const currentOrder = inferCurrentOrder(chapters.map((c) => c.order));
+  const dueIds = useMemo(() => {
+    if (currentOrder == null) return new Set<string>();
+    const due = classifyDuePlotNotes(plotNotes, currentOrder);
+    return new Set([...due.mustResolve, ...due.mustPlant].map((p) => p.id));
+  }, [plotNotes, currentOrder]);
+  const dueCount = dueIds.size;
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-8 py-8">
@@ -131,6 +160,12 @@ export default function PlanningPage() {
             <h1 className="text-xl font-bold">剧情规划</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               共 {plotNotes.length} 条 · 待收束 {pendingCount} 条
+              {dueCount > 0 && (
+                <span className="text-amber-600 dark:text-amber-400">
+                  {" "}
+                  · 到期 {dueCount} 条
+                </span>
+              )}
             </p>
           </div>
           <Button onClick={openCreate}>
@@ -183,13 +218,26 @@ export default function PlanningPage() {
                           </button>
                         </div>
                       </div>
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <Badge
                           className={STATUS_BADGE_CLASS[p.status]}
                           variant="secondary"
                         >
                           {PLOT_STATUS_LABEL[p.status]}
                         </Badge>
+                        {dueIds.has(p.id) && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                          >
+                            已到期
+                          </Badge>
+                        )}
+                        {p.expectedResolveChapter != null && (
+                          <span className="text-xs text-muted-foreground/70">
+                            预期第{p.expectedResolveChapter}章回收
+                          </span>
+                        )}
                       </div>
                       {p.content && (
                         <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
@@ -268,6 +316,44 @@ export default function PlanningPage() {
                 onChange={(e) => setForm({ ...form, content: e.target.value })}
               />
             </div>
+            {form.type === "foreshadow" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>预期埋设章</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.expectedPlantChapter ?? ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        expectedPlantChapter: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                      })
+                    }
+                    placeholder="如 3"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>预期回收章</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.expectedResolveChapter ?? ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        expectedResolveChapter: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                      })
+                    }
+                    placeholder="如 15"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>

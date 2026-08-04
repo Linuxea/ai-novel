@@ -28,6 +28,12 @@ export const UpdateProjectSchema = z
     status: ProjectStatusSchema.optional(),
     aiModel: z.string().trim().optional(),
     temperature: z.number().min(0).max(2).optional(),
+    ragMode: z.enum(["off", "bm25", "embed"]).optional(),
+    ragTopK: z.number().int().min(1).max(20).optional(),
+    generateStrategy: z.enum(["auto", "single", "multi"]).optional(),
+    multiStepCritique: z.boolean().optional(),
+    multiStepRewrite: z.boolean().optional(),
+    autoResolveForeshadow: z.boolean().optional(),
   })
   .strict();
 
@@ -78,17 +84,38 @@ export const CreateWorldSectionSchema = z
 
 export const UpdateWorldSectionSchema = CreateWorldSectionSchema.partial().strict();
 
-export const CreatePlotNoteSchema = z
-  .object({
-    type: PlotTypeSchema,
-    title: NonEmptyString,
-    content: z.string().optional(),
-    status: PlotStatusSchema.optional(),
-    characterIds: z.array(z.string()).optional(),
-  })
-  .strict();
+const PlotNoteFields = z.object({
+  type: PlotTypeSchema,
+  title: NonEmptyString,
+  content: z.string().optional(),
+  status: PlotStatusSchema.optional(),
+  characterIds: z.array(z.string()).optional(),
+  expectedPlantChapter: z.number().int().positive().optional(),
+  expectedResolveChapter: z.number().int().positive().optional(),
+});
 
-export const UpdatePlotNoteSchema = CreatePlotNoteSchema.partial().strict();
+const plotNoteChapterRefine = (d: {
+  expectedPlantChapter?: number;
+  expectedResolveChapter?: number;
+}) =>
+  !d.expectedPlantChapter ||
+  !d.expectedResolveChapter ||
+  d.expectedResolveChapter > d.expectedPlantChapter;
+
+export const CreatePlotNoteSchema = PlotNoteFields.strict().refine(
+  plotNoteChapterRefine,
+  {
+    message: "expectedResolveChapter 必须晚于 expectedPlantChapter",
+    path: ["expectedResolveChapter"],
+  },
+);
+
+export const UpdatePlotNoteSchema = PlotNoteFields.partial()
+  .strict()
+  .refine(plotNoteChapterRefine, {
+    message: "expectedResolveChapter 必须晚于 expectedPlantChapter",
+    path: ["expectedResolveChapter"],
+  });
 
 export const CreateChapterSchema = z
   .object({

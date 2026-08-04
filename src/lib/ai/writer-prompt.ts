@@ -1,11 +1,25 @@
 import "server-only";
-import type { Chapter, Character, Project, ProjectData } from "@/lib/types";
+import type {
+  Chapter,
+  Character,
+  PlotNote,
+  Project,
+  ProjectData,
+  WorldSection,
+} from "@/lib/types";
 import {
   PLOT_STATUS_LABEL,
   PLOT_TYPE_META,
   RELATIONSHIP_META,
   WORLD_CATEGORY_LABEL,
 } from "@/lib/types";
+import {
+  classifyDuePlotNotes,
+  hasUrgentDue,
+  renderDueSection,
+} from "@/lib/plot-due";
+import { renderSummaryBlock } from "@/lib/ai/summary";
+import type { RagHit } from "@/lib/rag/chunk";
 
 /** 单章前文上下文：大纲 + 正文节选 */
 export interface PrevChapterContext {
@@ -52,15 +66,46 @@ function formatCharacter(
   return parts.join("\n");
 }
 
-/** 构建章节正文生成的系统提示词 */
-export function buildWriterPrompt(
+/** 各 prompt 共用的上下文包：设定 + 前文，由 assembleContextBundle 装配。
+ *  Wave 2/3 会在此基础上扩展（priorSummaries / ragHits / duePlots 等）。 */
+export interface ContextBundle {
+  project: Project;
+  characters: Character[];
+  worldbuilding: WorldSection[];
+  chapters: Chapter[];
+  plotNotes: PlotNote[];
+  prevContexts: PrevChapterContext[];
+}
+
+/** 从 ProjectData + 前文上下文装配 ContextBundle */
+export function assembleContextBundle(
   data: ProjectData,
-  chapter: { title: string; outline: string; order: number },
-  existingContent: string,
-  chapters: Chapter[],
   prevContexts: PrevChapterContext[],
+): ContextBundle {
+  return {
+    project: data.project,
+    characters: data.characters,
+    worldbuilding: data.worldbuilding,
+    chapters: data.chapters,
+    plotNotes: data.plotNotes,
+    prevContexts,
+  };
+}
+
+/** 渲染各 prompt（正文生成 / beat 规划 / 扩写 / 自评）共用的设定与前文上下文。
+ *  currentOrder 用于渲染"前情提要"（仅 order < currentOrder 的章节摘要）；不传则省略该段。 */
+export function buildSharedContext(
+  bundle: ContextBundle,
+  currentOrder?: number,
 ): string {
-  const { project, characters, worldbuilding, plotNotes } = data;
+  const {
+    project,
+    characters,
+    worldbuilding,
+    chapters,
+    plotNotes,
+    prevContexts,
+  } = bundle;
 
   // 角色关系解析所需的 id → name 映射
   const nameById = new Map<string, string>(
@@ -111,9 +156,7 @@ export function buildWriterPrompt(
     ? prevContexts
         .map((pc) => {
           const lines = [`第${pc.order}章《${pc.title}》`];
-          lines.push(
-            `  大纲：${pc.outline || "（无大纲）"}`,
-          );
+          lines.push(`  大纲：${pc.outline || "（无大纲）"}`);
           if (pc.contentTail.trim()) {
             lines.push(`  正文节选（末段）：\n"""\n${pc.contentTail.trim()}\n"""`);
           }
@@ -122,9 +165,20 @@ export function buildWriterPrompt(
         .join("\n\n")
     : "（本章为开篇，无前文）";
 
-  return `你是一位才华横溢的中文小说作家，正在为《${project.title}》撰写正文。
+  const summaryBlock =
+    currentOrder != null
+      ? renderSummaryBlock(
+          chapters
+            .filter((c) => c.order < currentOrder)
+            .map((c) => ({
+              order: c.order,
+              title: c.title,
+              summary: c.summary ?? "",
+            })),
+        )
+      : "";
 
-# 作品设定
+  return `# 作品设定
 - 题材：${project.genre}
 - 简介：${project.summary || "（无）"}
 
@@ -136,12 +190,49 @@ ${charBlock}
 
 # 已规划章节（整体走向）
 ${arcBlock}
-
+${
+  summaryBlock
+    ? `\n# 前情提要（已发生的事件）\n${summaryBlock}`
+    : ""
+}
 # 剧情规划（写作参照：留意埋设与回收）
 ${plotBlock || "（暂无待埋/待收的剧情线）"}${resolvedHint}
 
 # 前文（最近章节的大纲与正文节选）
-${prevBlock}
+${prevBlock}`;
+}
+
+/** 构建章节正文生成的系统提示词 */
+export function buildWriterPrompt(
+  bundle: ContextBundle,
+  chapter: { title: string; outline: string; order: number },
+  existingContent: string,
+  ragHits?: RagHit[],
+): string {
+  const due = classifyDuePlotNotes(bundle.plotNotes, chapter.order);
+  const showDue = hasUrgentDue(due) || due.approaching.length > 0;
+  const dueBlock = showDue
+    ? `\n\n# 本章需处理的伏笔（务必自然织入，详见写作要求第 4 条）\n${renderDueSection(due, chapter.order)}`
+    : "";
+
+  const ragBlock =
+    ragHits && ragHits.length
+      ? `\n\n# 相关片段（来自早期章节/世界观/剧情的检索，供参考保持连贯）\n${ragHits
+          .map((h) => {
+            const label =
+              h.chapterOrder != null
+                ? `${h.source}·第${h.chapterOrder}章`
+                : h.source;
+            const body =
+              h.text.length > 350 ? h.text.slice(0, 350) + "…" : h.text;
+            return `- [${label}] 《${h.ownerTitle}》摘录：\n"""\n${body}\n"""`;
+          })
+          .join("\n\n")}`
+      : "";
+
+  return `你是一位才华横溢的中文小说作家，正在为《${bundle.project.title}》撰写正文。
+
+${buildSharedContext(bundle, chapter.order)}${ragBlock}${dueBlock}
 
 # 当前任务
 撰写 第${chapter.order}章《${chapter.title}》。
@@ -151,7 +242,7 @@ ${prevBlock}
 1. 用流畅、有画面感的中文小说笔法，注重场景、动作、对话与心理的平衡。
 2. 严格遵循「角色」中的人物性格、说话方式、背景、目标与关系；角色之间的互动基调必须与设定一致。
 3. 与「前文」中已发生的事件、人物状态、已说过的台词、已出现的物品保持连贯，不得矛盾或重复（例如已死之人不可复活、已交付的信物不可再次出现）。
-4. 推进「本章大纲」中规划的内容，注意埋设与回收伏笔。参照「剧情规划」中标记为构想中/进行中的伏笔与故事线自然地埋设铺垫；不要重复「已收束」的线索。
+4. **伏笔处理**：上方「本章需处理的伏笔」中标注"必须回收/必须埋下"的条目，务必在本章正文中予以落实——但必须做到：自然织入，禁止生硬塞入（不要让角色直接念出伏笔说明，不要用旁白硬解释，通过场景、对话、物件、人物反应让伏笔"发生"而非"被陈述"）；回收要克制（可以只揭示一部分，留余韵）；埋设要隐蔽（应是读者重读时才察觉的细节）。参照「剧情规划」中标记为构想中/进行中的伏笔与故事线自然地埋设铺垫；不要重复「已收束」的线索。若与本章大纲严重冲突，优先大纲，但在结尾留出可承接伏笔的钩子。
 5. 节奏自然，避免说教和流水账。
 6. 直接输出正文，不要加章节标题、不要解释、不要任何前言后语。
 ${

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { badgeVariants } from "@/components/ui/badge";
-import { Download, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Download, Loader2, Database } from "lucide-react";
 import { toast } from "sonner";
 import { useProjectStore } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -17,7 +24,13 @@ import type { Project } from "@/lib/types";
 
 const GENRES = ["玄幻", "科幻", "言情", "悬疑", "武侠", "都市", "历史", "其他"];
 
-export function SettingsForm({ defaultModel }: { defaultModel: string }) {
+export function SettingsForm({
+  defaultModel,
+  embedConfigured,
+}: {
+  defaultModel: string;
+  embedConfigured: boolean;
+}) {
   const project = useProjectStore((s) => s.project);
 
   if (!project) {
@@ -34,6 +47,7 @@ export function SettingsForm({ defaultModel }: { defaultModel: string }) {
       key={project.id}
       project={project}
       defaultModel={defaultModel}
+      embedConfigured={embedConfigured}
     />
   );
 }
@@ -41,9 +55,11 @@ export function SettingsForm({ defaultModel }: { defaultModel: string }) {
 function SettingsFormInner({
   project,
   defaultModel,
+  embedConfigured,
 }: {
   project: Project;
   defaultModel: string;
+  embedConfigured: boolean;
 }) {
   const load = useProjectStore(useShallow((s) => s.load));
   const projectId = project.id;
@@ -53,8 +69,39 @@ function SettingsFormInner({
     summary: project.summary,
     aiModel: project.aiModel || "",
     temperature: project.temperature ?? 0.8,
+    ragMode: project.ragMode ?? "off",
+    ragTopK: project.ragTopK ?? 6,
+    generateStrategy: project.generateStrategy ?? "auto",
   });
   const [saving, setSaving] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [ragChunks, setRagChunks] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getRagStatus(projectId)
+      .then((res) => {
+        if (!cancelled) setRagChunks(res.meta?.chunkCount ?? 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  async function handleRebuild() {
+    setRebuilding(true);
+    try {
+      const res = await api.rebuildRagIndex(projectId);
+      setRagChunks(res.chunkCount);
+      toast.success(`索引已重建（${res.chunkCount} 个片段）`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setRebuilding(false);
+    }
+  }
 
   async function handleSave() {
     if (!form.title.trim()) {
@@ -159,6 +206,99 @@ function SettingsFormInner({
             }
             className="w-full"
           />
+        </div>
+        <div className="space-y-1.5">
+          <Label>正文生成策略</Label>
+          <Select
+            value={form.generateStrategy}
+            onValueChange={(v) =>
+              setForm({
+                ...form,
+                generateStrategy: v as "auto" | "single" | "multi",
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">自动（推荐）</SelectItem>
+              <SelectItem value="single">单次生成（快、省）</SelectItem>
+              <SelectItem value="multi">多步生成（规划分镜→逐段扩写，质量更高但耗时与成本约 3-4 倍）</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground/70">
+            自动：重写走多步、续写大量已有正文时走单次。
+          </p>
+        </div>
+      </Card>
+
+      <Card className="mt-4 space-y-5 p-6">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Database className="h-4 w-4" />
+            AI 检索（RAG）
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            生成章节时，从早期章节正文、世界观、剧情中检索相关片段注入，弥补长程记忆丢失。关闭则不检索。
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>检索模式</Label>
+          <Select
+            value={form.ragMode}
+            onValueChange={(v) =>
+              setForm({ ...form, ragMode: v as "off" | "bm25" | "embed" })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">关闭</SelectItem>
+              <SelectItem value="bm25">关键词检索（BM25，本地）</SelectItem>
+              <SelectItem value="embed" disabled={!embedConfigured}>
+                向量检索（embed）
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground/70">
+            {embedConfigured
+              ? "向量检索效果更好但需在重建索引时调用 embedding 端点。"
+              : "向量检索需在 .env.local 配置 EMBED_API_KEY / EMBED_BASE_URL / EMBED_MODEL 后重启。"}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>召回片段数（top-K）: {form.ragTopK}</Label>
+          <input
+            type="range"
+            min={1}
+            max={12}
+            step={1}
+            value={form.ragTopK}
+            onChange={(e) =>
+              setForm({ ...form, ragTopK: Number(e.target.value) })
+            }
+            className="w-full"
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
+          <span className="text-xs text-muted-foreground">
+            索引片段数：{ragChunks ?? "—"}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRebuild}
+            disabled={rebuilding}
+          >
+            {rebuilding ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Database className="mr-2 h-3.5 w-3.5" />
+            )}
+            重建索引
+          </Button>
         </div>
       </Card>
 

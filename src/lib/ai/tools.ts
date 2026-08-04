@@ -101,7 +101,7 @@ export function buildTools(projectId: string) {
 
     upsert_plot_note: tool({
       description:
-        "创建或更新一条「剧情规划」。用于沉淀跨章的线索与方向——故事线(arc)、伏笔(foreshadow)、转折(twist)、后续走向(plan)、备忘(note)。注意：这不同于章节大纲（章节大纲是某一章具体写什么）；此处记录的是贯穿多章的脉络、需要回收的伏笔、整体走向等。status：idea构想中/active进行中/resolved已收束。",
+        "创建或更新一条「剧情规划」——沉淀跨章的线索与方向。类型：arc故事线/foreshadow伏笔/twist转折/plan后续走向/note备忘。**伏笔(foreshadow)请尽量填写 expectedPlantChapter 与 expectedResolveChapter**（章序号），系统会在生成对应章节时自动提醒兑现，逾期未收的伏笔会被显著标注。例：埋一个'主角脖子上的胎记'伏笔，预期第3章埋、第15章揭晓身份，则 expectedPlantChapter=3, expectedResolveChapter=15。status：idea构想中/active进行中(已埋下)/resolved已收束(已回收)。这与章节大纲不同——规划是跨章脉络，章节大纲是某一章具体写什么。",
       inputSchema: UpsertPlotNoteInputSchema,
       execute: safe(async (input) => {
         const created = await storage.upsertPlotNote(projectId, input);

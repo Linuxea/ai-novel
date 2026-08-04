@@ -16,8 +16,20 @@ export const env = {
   AI_MODEL: getEnv("AI_MODEL", "deepseek-v4-flash"),
   /** 数据存储根目录（项目根下的 data/） */
   DATA_DIR: getEnv("DATA_DIR", "data"),
+  /** RAG 向量检索：OpenAI 兼容 embedding 端点（可指 localhost Ollama/Xinference 或云端 BGE） */
+  EMBED_API_KEY: getEnv("EMBED_API_KEY"),
+  EMBED_BASE_URL: getEnv("EMBED_BASE_URL", ""),
+  EMBED_MODEL: getEnv("EMBED_MODEL", "bge-m3"),
 };
 
 export function isAIConfigured(): boolean {
   return env.AI_API_KEY.length > 0;
+}
+
+/** embedding 是否已配置（ragMode=embed 时由 retrieve/rebuild 检查） */
+export function isEmbedConfigured(): boolean {
+  return (
+    env.EMBED_API_KEY.length > 0 &&
+    env.EMBED_BASE_URL.length > 0
+  );
 }

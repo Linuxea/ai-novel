@@ -101,6 +101,10 @@ export const ChapterSchema = z.object({
   status: ChapterStatusSchema,
   wordCount: z.number().optional().default(0),
   updatedAt: z.string().optional(),
+  contentHash: z.string().optional().default(""),
+  summary: z.string().optional().default(""),
+  summaryOfContentHash: z.string().optional().default(""),
+  summaryGeneratedAt: z.string().optional(),
 });
 export type Chapter = z.infer<typeof ChapterSchema>;
 
@@ -140,6 +144,10 @@ export const PlotNoteSchema = z.object({
   content: z.string(),
   status: PlotStatusSchema,
   characterIds: z.array(z.string()).optional().default([]),
+  expectedPlantChapter: z.number().int().positive().optional(),
+  expectedResolveChapter: z.number().int().positive().optional(),
+  plantedInChapter: z.number().int().positive().optional(),
+  resolvedInChapter: z.number().int().positive().optional(),
   updatedAt: z.string(),
 });
 export type PlotNote = z.infer<typeof PlotNoteSchema>;
@@ -156,6 +164,15 @@ export const ProjectSchema = z.object({
   status: ProjectStatusSchema,
   aiModel: z.string().optional().default(""),
   temperature: z.number().optional().default(0.8),
+  ragMode: z.enum(["off", "bm25", "embed"]).optional().default("off"),
+  ragTopK: z.number().int().min(1).max(20).optional().default(6),
+  generateStrategy: z
+    .enum(["auto", "single", "multi"])
+    .optional()
+    .default("auto"),
+  multiStepCritique: z.boolean().optional().default(true),
+  multiStepRewrite: z.boolean().optional().default(false),
+  autoResolveForeshadow: z.boolean().optional().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -228,14 +245,138 @@ export type CreateChapterOutlineInput = z.infer<
   typeof CreateChapterOutlineInputSchema
 >;
 
-export const UpsertPlotNoteInputSchema = z.object({
-  id: z.string().optional().describe("更新现有条目时传入 id；新建留空"),
-  type: PlotTypeSchema.describe(
-    "arc故事线/foreshadow伏笔/twist转折/plan后续走向/note备忘",
-  ),
-  title: z.string(),
-  content: z.string().optional().describe("详细说明（可留空后补）"),
-  status: PlotStatusSchema.optional().describe("默认 idea 构想中"),
-  characterIds: z.array(z.string()).optional().describe("关联角色 id（可选）"),
-});
+export const UpsertPlotNoteInputSchema = z
+  .object({
+    id: z.string().optional().describe("更新现有条目时传入 id；新建留空"),
+    type: PlotTypeSchema.describe(
+      "arc故事线/foreshadow伏笔/twist转折/plan后续走向/note备忘",
+    ),
+    title: z.string(),
+    content: z.string().optional().describe("详细说明（可留空后补）"),
+    status: PlotStatusSchema.optional().describe("默认 idea 构想中"),
+    characterIds: z.array(z.string()).optional().describe("关联角色 id（可选）"),
+    expectedPlantChapter: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("计划在第几章埋下（主要针对伏笔；章序号，如 5 表示第5章）"),
+    expectedResolveChapter: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("计划在第几章回收/揭晓（主要针对伏笔；章序号）"),
+  })
+  .refine(
+    (d) =>
+      !d.expectedPlantChapter ||
+      !d.expectedResolveChapter ||
+      d.expectedResolveChapter > d.expectedPlantChapter,
+    {
+      message: "expectedResolveChapter 必须晚于 expectedPlantChapter",
+      path: ["expectedResolveChapter"],
+    },
+  );
 export type UpsertPlotNoteInput = z.infer<typeof UpsertPlotNoteInputSchema>;
+
+/** ===== 一致性检查 ===== */
+export const FindingSeveritySchema = z.enum(["high", "medium", "low"]);
+export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
+
+export const FindingCategorySchema = z.enum([
+  "character",
+  "worldview",
+  "foreshadow",
+  "timeline",
+  "repetition",
+  "logic",
+  "other",
+]);
+export type FindingCategory = z.infer<typeof FindingCategorySchema>;
+
+export const FINDING_CATEGORY_META: Record<
+  FindingCategory,
+  { label: string; color: string }
+> = {
+  character: { label: "人物矛盾", color: "#ef4444" },
+  worldview: { label: "世界观违反", color: "#f59e0b" },
+  foreshadow: { label: "伏笔问题", color: "#a855f7" },
+  timeline: { label: "时间线", color: "#3b82f6" },
+  repetition: { label: "重复", color: "#64748b" },
+  logic: { label: "逻辑硬伤", color: "#ec4899" },
+  other: { label: "其他", color: "#6b7280" },
+};
+
+export const SEVERITY_META: Record<
+  FindingSeverity,
+  { label: string; color: string }
+> = {
+  high: { label: "高", color: "#ef4444" },
+  medium: { label: "中", color: "#f59e0b" },
+  low: { label: "低", color: "#64748b" },
+};
+
+export const ConsistencyFindingSchema = z.object({
+  severity: FindingSeveritySchema,
+  category: FindingCategorySchema,
+  message: z.string().describe("问题简述，一两句，含具体角色/事件名"),
+  evidence: z
+    .string()
+    .optional()
+    .describe("正文中能佐证该问题的原文片段，尽量逐字引用"),
+  location: z.string().optional().describe("问题所在位置，如「开篇第三段」"),
+  relatedPlotNoteId: z
+    .string()
+    .optional()
+    .describe("若与某条 PlotNote 直接相关，填其 id"),
+  suggestedAction: z.string().optional().describe("一句话修改建议"),
+});
+export type ConsistencyFinding = z.infer<typeof ConsistencyFindingSchema>;
+
+export const ForeshadowResolutionSchema = z.object({
+  plotNoteId: z.string(),
+  confidence: z.enum(["high", "medium", "low"]),
+  reason: z.string().describe("为何判定已回收，引用正文片段"),
+});
+export type ForeshadowResolution = z.infer<typeof ForeshadowResolutionSchema>;
+
+/** 模型产出（generateObject 的 schema） */
+export const ConsistencyCheckOutputSchema = z.object({
+  summary: z.string().describe("一句话总评，如「未发现明显问题」"),
+  findings: z.array(ConsistencyFindingSchema).max(8),
+  foreshadowResolutions: z.array(ForeshadowResolutionSchema),
+});
+export type ConsistencyCheckOutput = z.infer<
+  typeof ConsistencyCheckOutputSchema
+>;
+
+/** 持久化报告 = 模型产出 + 服务端元数据 */
+export const ConsistencyReportSchema = ConsistencyCheckOutputSchema.extend({
+  chapterId: z.string(),
+  checkedAt: z.string(),
+  contentHash: z.string(),
+  error: z.string().optional(),
+});
+export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
+
+/** ===== 多步生成：beat 分镜 ===== */
+export const BeatSchema = z.object({
+  index: z.number().describe("1-based 序号"),
+  summary: z.string().describe("本 beat 发生什么，1-2 句"),
+  targetWords: z.number().int().min(100).max(1500),
+  pov: z.string().optional().describe("视角角色名"),
+  mood: z.string().optional().describe("情绪基调"),
+  characterIds: z.array(z.string()).optional(),
+  plotHooks: z
+    .array(z.string())
+    .optional()
+    .describe("本 beat 要埋/收的伏笔标题"),
+});
+export type Beat = z.infer<typeof BeatSchema>;
+
+export const BeatSheetSchema = z.object({
+  beats: z.array(BeatSchema).min(2).max(10),
+  overallArc: z.string().describe("本章情绪/情节弧线一句话"),
+});
+export type BeatSheet = z.infer<typeof BeatSheetSchema>;

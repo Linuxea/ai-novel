@@ -1,6 +1,7 @@
 import type {
   Chapter,
   Character,
+  ConsistencyReport,
   PlotNote,
   Project,
   RelationshipType,
@@ -152,6 +153,11 @@ export const api = {
       `/api/projects/${id}/chapters/${chapterId}/sync-outline`,
       { method: "POST" },
     ),
+  summarizeChapter: (id: string, chapterId: string, force = false) =>
+    req<{ summary: string; contentHash: string; cached: boolean }>(
+      `/api/projects/${id}/chapters/${chapterId}/summary${force ? "?force=1" : ""}`,
+      { method: "POST" },
+    ),
 
   /** 对话历史 */
   getChat: (id: string) =>
@@ -160,4 +166,25 @@ export const api = {
     req(`/api/projects/${id}/chat`, { method: "POST", body: body({ messages }) }),
   clearChat: (id: string) =>
     req(`/api/projects/${id}/chat`, { method: "DELETE" }),
+
+  /** RAG 索引 */
+  getRagStatus: (id: string) =>
+    req<{ meta: { mode: string; builtAt: string; chunkCount: number } | null }>(
+      `/api/projects/${id}/rag`,
+    ),
+  rebuildRagIndex: (id: string) =>
+    req<{ chunkCount: number }>(`/api/projects/${id}/rag/rebuild`, {
+      method: "POST",
+    }),
+
+  /** 一致性检查 */
+  getCheck: (id: string, chapterId: string) =>
+    req<{ report: ConsistencyReport | null }>(
+      `/api/projects/${id}/chapters/${chapterId}/check`,
+    ),
+  runCheck: (id: string, chapterId: string) =>
+    req<{ report: ConsistencyReport }>(
+      `/api/projects/${id}/chapters/${chapterId}/check`,
+      { method: "POST" },
+    ),
 };
