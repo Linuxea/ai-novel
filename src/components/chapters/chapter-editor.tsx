@@ -24,10 +24,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
-import { useProjectStore } from "@/lib/store";
+import { api, ApiClientError } from "@/lib/api";
+import { useProjectStore, useProjectStoreApi } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { classifyDuePlotNotes } from "@/lib/plot-due";
+import { parseGenerationEvent } from "@/lib/ai/generation-events";
 import {
   FINDING_CATEGORY_META,
   SEVERITY_META,
@@ -44,12 +45,24 @@ export function ChapterEditor({
   projectId: string;
   chapterId: string;
 }) {
-  const { chapters, characters, plotNotes, upsertChapterLocal } =
+  const storeApi = useProjectStoreApi();
+  const {
+    chapters,
+    characters,
+    plotNotes,
+    commitChapterLocal,
+    commitPlotNoteLocal,
+    replacePlotNotesLocal,
+    upsertChapterLocal,
+  } =
     useProjectStore(
       useShallow((s) => ({
         chapters: s.chapters,
         characters: s.characters,
         plotNotes: s.plotNotes,
+        commitChapterLocal: s.commitChapterLocal,
+        commitPlotNoteLocal: s.commitPlotNoteLocal,
+        replacePlotNotesLocal: s.replacePlotNotesLocal,
         upsertChapterLocal: s.upsertChapterLocal,
       })),
     );
@@ -67,15 +80,29 @@ export function ChapterEditor({
   const [tab, setTab] = useState<"write" | "preview">("write");
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loadState, setLoadState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const loaded = loadState === "ready";
+  const [generationDraft, setGenerationDraft] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  const [generationIncomplete, setGenerationIncomplete] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const contentRef = useRef("");
+  const generationDraftRef = useRef<string | null>(null);
+  const revisionRef = useRef(0);
+  const [contentRevision, setContentRevision] = useState(0);
+  const [persistedContentHash, setPersistedContentHash] = useState("");
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const [dirty, setDirty] = useState(false);
 
   // 一致性检查
   const [checkReport, setCheckReport] =
     useState<ConsistencyReport | null>(null);
+  const [checkStaleFromServer, setCheckStaleFromServer] = useState(false);
   const [checkRunning, setCheckRunning] = useState(false);
   const [checkOpen, setCheckOpen] = useState(false);
 
@@ -100,12 +127,15 @@ export function ChapterEditor({
         const next = res.content || "";
         contentRef.current = next;
         setContent(next);
-        setLoaded(true);
+        revisionRef.current = res.contentRevision;
+        setContentRevision(res.contentRevision);
+        setPersistedContentHash(res.contentHash);
+        setLoadState("ready");
       })
       .catch((e) => {
         if (cancelled) return;
         toast.error((e as Error).message);
-        setLoaded(true);
+        setLoadState("error");
       });
     return () => {
       cancelled = true;
@@ -127,32 +157,39 @@ export function ChapterEditor({
     contentRef.current = v;
     setContent(v);
     setDirty(true);
+    setGenerationIncomplete(false);
   }
 
   // 保存串行化：自动保存（debounce/blur）与生成后保存可能并发，
   // 若不排队，后到服务器的旧快照会覆盖新内容（last-write-wins）
   const saveContent = useCallback(
-    (snapshot: string, silent = false): Promise<boolean> => {
-      if (!loaded || !chapter) return Promise.resolve(false);
-      const run = saveChainRef.current.then(async (): Promise<boolean> => {
+    (snapshot: string, silent = false): Promise<(typeof chapter) | null> => {
+      if (!loaded || !chapter) return Promise.resolve(null);
+      const run = saveChainRef.current.then(async (): Promise<
+        (typeof chapter) | null
+      > => {
         setSaving(true);
         try {
-          await api.saveChapterContent(projectId, chapterId, snapshot);
+          const { project, chapter: savedChapter } = await api.saveChapterContent(
+            projectId,
+            chapterId,
+            snapshot,
+            revisionRef.current,
+          );
+          revisionRef.current = savedChapter.contentRevision;
+          setContentRevision(savedChapter.contentRevision);
+          setPersistedContentHash(savedChapter.contentHash);
           if (contentRef.current === snapshot) setDirty(false);
-          // 刷新 store 中的字数/状态（与服务端 writeChapterContent 的推进规则一致）
-          const latest =
-            useProjectStore.getState().chapters.find((c) => c.id === chapterId) ??
-            chapter;
-          upsertChapterLocal({
-            ...latest,
-            wordCount: snapshot.replace(/\s+/g, "").length,
-            status: latest.status === "outline" ? "drafting" : latest.status,
-          });
+          commitChapterLocal(project, savedChapter);
           if (!silent) toast.success("已保存");
-          return true;
+          return savedChapter;
         } catch (e) {
-          toast.error((e as Error).message);
-          return false;
+          if (e instanceof ApiClientError && e.code === "REVISION_CONFLICT") {
+            toast.error("正文已在其他页面更新，当前草稿未覆盖服务器内容");
+          } else {
+            toast.error((e as Error).message);
+          }
+          return null;
         } finally {
           setSaving(false);
         }
@@ -160,36 +197,52 @@ export function ChapterEditor({
       saveChainRef.current = run;
       return run;
     },
-    [chapter, chapterId, loaded, projectId, upsertChapterLocal],
+    [chapter, chapterId, commitChapterLocal, loaded, projectId],
   );
 
   async function handleSave(silent = false) {
-    const ok = await saveContent(contentRef.current, silent);
-    if (ok && !silent) void triggerSummary();
-    return ok;
+    const saved = await saveContent(contentRef.current, silent);
+    if (saved) {
+      setGenerationIncomplete(false);
+      if (!silent) void triggerSummary(saved.contentRevision);
+    }
+    return saved;
   }
 
   // 触发章节摘要生成（服务端落盘）。失败静默降级，绝不影响写作流程。
   const triggerSummary = useCallback(
-    async (force = false) => {
+    async (expectedContentRevision: number, force = false) => {
       if (!chapter) return;
       try {
-        const res = await api.summarizeChapter(projectId, chapterId, force);
-        const latest =
-          useProjectStore.getState().chapters.find((c) => c.id === chapterId) ??
-          chapter;
+        const res = await api.summarizeChapter(
+          projectId,
+          chapterId,
+          expectedContentRevision,
+          force,
+        );
+        if (
+          revisionRef.current !== res.contentRevision ||
+          storeApi.getState().projectId !== projectId
+        ) {
+          return;
+        }
+        const latest = storeApi
+          .getState()
+          .chapters.find((item) => item.id === chapterId);
+        if (!latest) return;
         upsertChapterLocal({
           ...latest,
-          contentHash: res.contentHash,
-          summary: res.summary,
-          summaryOfContentHash: res.contentHash,
-          summaryGeneratedAt: new Date().toISOString(),
+          summary: res.chapter.summary,
+          summaryOfContentHash: res.chapter.summaryOfContentHash,
+          summaryInputFingerprint: res.chapter.summaryInputFingerprint,
+          summaryPromptVersion: res.chapter.summaryPromptVersion,
+          summaryGeneratedAt: res.chapter.summaryGeneratedAt,
         });
       } catch {
         // 静默：摘要失败不影响写作
       }
     },
-    [chapter, chapterId, projectId, upsertChapterLocal],
+    [chapter, chapterId, projectId, storeApi, upsertChapterLocal],
   );
 
   // 挂载时取最近一次缓存的一致性检查报告
@@ -198,7 +251,10 @@ export function ChapterEditor({
     api
       .getCheck(projectId, chapterId)
       .then((res) => {
-        if (!cancelled) setCheckReport(res.report);
+        if (!cancelled) {
+          setCheckReport(res.report);
+          setCheckStaleFromServer(res.stale);
+        }
       })
       .catch(() => {});
     return () => {
@@ -206,29 +262,47 @@ export function ChapterEditor({
     };
   }, [projectId, chapterId]);
 
-  // 运行一致性检查（非阻塞）。失败静默降级，绝不影响正文。
-  const runCheck = useCallback(async () => {
+  // 运行一致性检查（非阻塞）；失败不影响正文提交。
+  const runCheck = useCallback(async (committedRevision?: number) => {
     setCheckRunning(true);
     try {
-      const res = await api.runCheck(projectId, chapterId);
-      setCheckReport(res.report);
-      // 检查可能自动回填了伏笔状态，刷新 plotNotes
-      if ((res.report.foreshadowResolutions ?? []).length > 0) {
-        await useProjectStore.getState().reload();
+      let expectedContentRevision = committedRevision ?? revisionRef.current;
+      if (committedRevision == null && dirty) {
+        const saved = await saveContent(contentRef.current, true);
+        if (!saved) return;
+        expectedContentRevision = saved.contentRevision;
       }
-    } catch {
-      // 静默
+      const res = await api.runCheck(
+        projectId,
+        chapterId,
+        expectedContentRevision,
+      );
+      if (revisionRef.current !== res.report.contentRevision) return;
+      setCheckReport(res.report);
+      setCheckStaleFromServer(false);
+      replacePlotNotesLocal(res.project, res.plotNotes);
+    } catch (error) {
+      if (
+        error instanceof ApiClientError &&
+        error.code === "REVISION_CONFLICT"
+      ) {
+        toast.info("检查期间正文或设定已变化，旧结果已丢弃");
+      } else {
+        toast.error((error as Error).message);
+      }
     } finally {
       setCheckRunning(false);
     }
-  }, [projectId, chapterId]);
+  }, [chapterId, dirty, projectId, replacePlotNotesLocal, saveContent]);
 
   async function markForeshadowResolved(plotNoteId: string) {
     try {
-      const { note } = await api.updatePlanning(projectId, plotNoteId, {
-        status: "resolved",
-      });
-      useProjectStore.getState().upsertPlotNoteLocal(note);
+      const { project, note } = await api.resolvePlanning(
+        projectId,
+        plotNoteId,
+        chapterId,
+      );
+      commitPlotNoteLocal(project, note);
       toast.success("已标记为已回收");
     } catch (e) {
       toast.error((e as Error).message);
@@ -237,11 +311,27 @@ export function ChapterEditor({
 
   // 自动保存（失焦或停顿）
   useEffect(() => {
-    if (!loaded || !dirty) return;
+    if (
+      !loaded ||
+      !dirty ||
+      generating ||
+      generationDraft !== null ||
+      generationIncomplete
+    ) {
+      return;
+    }
     const snapshot = content;
     const timer = setTimeout(() => saveContent(snapshot, true), 2000);
     return () => clearTimeout(timer);
-  }, [content, dirty, loaded, saveContent]);
+  }, [
+    content,
+    dirty,
+    generating,
+    generationDraft,
+    generationIncomplete,
+    loaded,
+    saveContent,
+  ]);
 
   async function handleGenerate(append: boolean) {
     if (generating) {
@@ -260,15 +350,19 @@ export function ChapterEditor({
         setGenerating(false);
         return;
       }
-      contentRef.current = "";
-      setContent("");
     }
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const initialDraft = append ? baseContent : "";
+    generationDraftRef.current = initialDraft;
+    setGenerationDraft(initialDraft);
+    setGenerationProgress(null);
+    setGenerationIncomplete(false);
+    let completed = false;
     try {
       const res = await fetch(
-        `/api/projects/${projectId}/chapters/${chapterId}/generate?mode=${append ? "continue" : "regenerate"}`,
+        `/api/projects/${projectId}/chapters/${chapterId}/generate?mode=${append ? "continue" : "regenerate"}&revision=${revisionRef.current}`,
         { method: "POST", signal: controller.signal },
       );
       if (!res.ok || !res.body) {
@@ -277,31 +371,71 @@ export function ChapterEditor({
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let acc = append ? contentRef.current : "";
+      let pending = "";
+      let acc = initialDraft;
+
+      const consumeLine = (line: string) => {
+        if (!line.trim()) return;
+        const event = parseGenerationEvent(line);
+        if (event.type === "delta") {
+          acc += event.text;
+          generationDraftRef.current = acc;
+          setGenerationDraft(acc);
+        } else if (event.type === "progress") {
+          setGenerationProgress({
+            current: event.current,
+            total: event.total,
+          });
+        } else if (event.type === "error") {
+          const error = new Error(event.message);
+          if (event.code === "ABORTED") error.name = "AbortError";
+          throw error;
+        } else if (event.type === "done") {
+          completed = true;
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        acc += chunk;
-        contentRef.current = acc;
-        setContent(acc);
-        setDirty(true);
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) consumeLine(line);
       }
-      toast.success("生成完成");
-      // 保存（走同一条串行链，避免与自动保存交错）
+      pending += decoder.decode();
+      if (pending.trim()) consumeLine(pending);
+      if (!completed) throw new Error("生成未完整结束，结果未保存");
+
+      contentRef.current = acc;
+      setContent(acc);
+      setDirty(true);
       const saved = await saveContent(acc, true);
       if (saved) {
-        setDirty(false);
-        // 触发摘要生成（前情记忆），失败静默
-        void triggerSummary();
-        // 触发一致性检查（失败静默，非阻塞）
-        void runCheck();
+        setGenerationIncomplete(false);
+        setGenerationDraft(null);
+        generationDraftRef.current = null;
+        toast.success("生成完成并已保存");
+        void triggerSummary(saved.contentRevision);
+        void runCheck(saved.contentRevision);
+      } else {
+        setGenerationIncomplete(true);
       }
     } catch (e) {
+      const draft = generationDraftRef.current;
+      if (draft !== null && draft !== initialDraft) {
+        contentRef.current = draft;
+        setContent(draft);
+        setDirty(true);
+        setGenerationIncomplete(true);
+      }
       if ((e as Error).name !== "AbortError") {
         toast.error((e as Error).message);
       }
     } finally {
+      setGenerationDraft(null);
+      generationDraftRef.current = null;
+      setGenerationProgress(null);
       setGenerating(false);
       abortRef.current = null;
     }
@@ -309,12 +443,12 @@ export function ChapterEditor({
 
   async function setStatus(status: ChapterStatus) {
     try {
-      const { chapter: updated } = await api.updateChapter(
+      const { project, chapter: updated } = await api.updateChapter(
         projectId,
         chapterId,
         { status },
       );
-      upsertChapterLocal(updated);
+      commitChapterLocal(project, updated);
       toast.success("已更新状态");
     } catch (e) {
       toast.error((e as Error).message);
@@ -330,12 +464,12 @@ export function ChapterEditor({
     if (!chapter) return;
     setOutlineSaving(true);
     try {
-      const { chapter: updated } = await api.updateChapter(
+      const { project, chapter: updated } = await api.updateChapter(
         projectId,
         chapterId,
         { outline: outlineDraft },
       );
-      upsertChapterLocal(updated);
+      commitChapterLocal(project, updated);
       setOutlineEditing(false);
       toast.success("大纲已保存");
     } catch (e) {
@@ -361,17 +495,16 @@ export function ChapterEditor({
     }
     setOutlineSyncing(true);
     try {
-      const { outline } = await api.syncOutline(projectId, chapterId);
-      if (!outline) {
+      const { project, chapter: updated } = await api.syncOutline(
+        projectId,
+        chapterId,
+        revisionRef.current,
+      );
+      if (!updated.outline) {
         toast.warning("未能生成大纲，请稍后重试");
         return;
       }
-      const { chapter: updated } = await api.updateChapter(
-        projectId,
-        chapterId,
-        { outline },
-      );
-      upsertChapterLocal(updated);
+      commitChapterLocal(project, updated);
       toast.success("大纲已从正文同步");
     } catch (e) {
       toast.error((e as Error).message);
@@ -387,12 +520,12 @@ export function ChapterEditor({
       ? current.filter((x) => x !== id)
       : [...current, id];
     try {
-      const { chapter: updated } = await api.updateChapter(
+      const { project, chapter: updated } = await api.updateChapter(
         projectId,
         chapterId,
         { characterIds: next },
       );
-      upsertChapterLocal(updated);
+      commitChapterLocal(project, updated);
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -407,12 +540,12 @@ export function ChapterEditor({
     if (!chapter) return;
     setNotesSaving(true);
     try {
-      const { chapter: updated } = await api.updateChapter(
+      const { project, chapter: updated } = await api.updateChapter(
         projectId,
         chapterId,
         { notes: notesDraft },
       );
-      upsertChapterLocal(updated);
+      commitChapterLocal(project, updated);
       setNotesEditing(false);
       toast.success("备注已保存");
     } catch (e) {
@@ -422,9 +555,17 @@ export function ChapterEditor({
     }
   }
 
+  const visibleContent = generationDraft ?? content;
   const wordCount = useMemo(
-    () => content.replace(/\s+/g, "").length,
-    [content],
+    () => visibleContent.replace(/\s+/g, "").length,
+    [visibleContent],
+  );
+
+  const checkIsStale = !!checkReport && (
+    checkStaleFromServer ||
+    dirty ||
+    checkReport.contentRevision !== contentRevision ||
+    checkReport.contentHash !== persistedContentHash
   );
 
   const significantFindings = (checkReport?.findings ?? []).filter(
@@ -444,6 +585,18 @@ export function ChapterEditor({
       );
     }
     if (!checkReport) return null;
+    if (checkIsStale) {
+      return (
+        <button
+          onClick={() => void runCheck()}
+          className="flex items-center gap-1 text-xs font-normal text-muted-foreground hover:text-foreground"
+          title="正文已变化，点击重新检查"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          检查已过期
+        </button>
+      );
+    }
     if (checkReport.error) {
       return (
         <button
@@ -520,11 +673,16 @@ export function ChapterEditor({
                 variant="outline"
                 size="sm"
                 onClick={() => handleGenerate(true)}
+                disabled={!loaded}
               >
                 <Sparkles className="mr-2 h-3.5 w-3.5 text-violet-500" />
                 续写
               </Button>
-              <Button size="sm" onClick={() => handleGenerate(false)}>
+              <Button
+                size="sm"
+                onClick={() => handleGenerate(false)}
+                disabled={!loaded}
+              >
                 <Sparkles className="mr-2 h-3.5 w-3.5" />
                 {content.trim() ? "重新生成" : "AI 生成"}
               </Button>
@@ -534,7 +692,7 @@ export function ChapterEditor({
             variant="outline"
             size="sm"
             onClick={() => handleSave(false)}
-            disabled={saving}
+            disabled={saving || !loaded || generating}
             aria-label="保存正文"
           >
             {saving ? (
@@ -729,6 +887,10 @@ export function ChapterEditor({
             <span className="text-xs text-muted-foreground">
               {wordCount.toLocaleString()} 字
               {dirty ? " · 未保存" : ""}
+              {generationIncomplete ? " · 生成未完成" : ""}
+              {generationProgress
+                ? ` · 正在生成 ${generationProgress.current}/${generationProgress.total}`
+                : ""}
             </span>
             <Badge variant="outline" className="cursor-pointer text-xs">
               <select
@@ -745,11 +907,28 @@ export function ChapterEditor({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {tab === "write" ? (
+          {loadState === "loading" ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              正在加载正文
+            </div>
+          ) : loadState === "error" ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+              <p>正文加载失败，为防止覆盖原文，编辑功能已停用。</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.reload()}
+              >
+                重新加载
+              </Button>
+            </div>
+          ) : tab === "write" ? (
             <Textarea
-              value={content}
+              value={visibleContent}
               onChange={(e) => handleChange(e.target.value)}
-              onBlur={() => dirty && handleSave(true)}
+              onBlur={() => !generating && dirty && handleSave(true)}
+              disabled={generating}
               placeholder="在此撰写正文，或点击「AI 生成」让 AI 帮你写…"
               className={cn(
                 "h-full min-h-full resize-none rounded-none border-0 font-serif text-base leading-loose focus-visible:ring-0",
@@ -758,10 +937,10 @@ export function ChapterEditor({
             />
           ) : (
             <div className="px-[15%] py-8">
-              {content.trim() ? (
+              {visibleContent.trim() ? (
                 <div className="prose prose-lg max-w-none whitespace-pre-wrap font-serif leading-loose dark:prose-invert">
                   <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
-                    {content}
+                    {visibleContent}
                   </ReactMarkdown>
                 </div>
               ) : (

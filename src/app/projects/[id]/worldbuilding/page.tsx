@@ -37,13 +37,18 @@ const CATEGORIES = Object.entries(WORLD_CATEGORY_LABEL) as [
 ][];
 
 export default function WorldbuildingPage() {
-  const { project, worldbuilding, upsertWorldLocal, removeWorldLocal } =
+  const {
+    project,
+    worldbuilding,
+    commitWorldLocal,
+    replaceWorldbuildingLocal,
+  } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
         worldbuilding: s.worldbuilding,
-        upsertWorldLocal: s.upsertWorldLocal,
-        removeWorldLocal: s.removeWorldLocal,
+        commitWorldLocal: s.commitWorldLocal,
+        replaceWorldbuildingLocal: s.replaceWorldbuildingLocal,
       })),
     );
   const projectId = project?.id ?? "";
@@ -79,7 +84,7 @@ export default function WorldbuildingPage() {
       const result = isEdit
         ? await api.updateWorld(projectId, editing!.id, form)
         : await api.upsertWorld(projectId, form);
-      upsertWorldLocal(result.section);
+      commitWorldLocal(result.project, result.section);
       toast.success(isEdit ? "已更新" : "已创建");
       setDialogOpen(false);
     } catch (e) {
@@ -92,8 +97,8 @@ export default function WorldbuildingPage() {
   async function handleDelete(w: WorldSection) {
     if (!confirm(`删除「${w.title}」？`)) return;
     try {
-      await api.deleteWorld(projectId, w.id);
-      removeWorldLocal(w.id);
+      const result = await api.deleteWorld(projectId, w.id);
+      replaceWorldbuildingLocal(result.project, result.worldbuilding);
       toast.success("已删除");
     } catch (e) {
       toast.error((e as Error).message);

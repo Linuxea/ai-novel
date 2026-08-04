@@ -169,7 +169,11 @@ export function buildSharedContext(
     currentOrder != null
       ? renderSummaryBlock(
           chapters
-            .filter((c) => c.order < currentOrder)
+            .filter(
+              (c) =>
+                c.order < currentOrder &&
+                c.summaryOfContentHash === c.contentHash,
+            )
             .map((c) => ({
               order: c.order,
               title: c.title,
@@ -293,5 +297,4 @@ ${
 3. 只输出大纲文本本身——不要加章节标题、编号、引号、"大纲："等任何前后缀或解释。
 4. 用流畅的中文。`;
 }
-
 

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { Character } from "@/lib/types";
+import type { CharacterMutationResponse } from "@/lib/api-contracts";
 
 const ROLE_OPTIONS = ["主角", "反派", "配角", "配角（重要）", "龙套"];
 
@@ -23,7 +24,7 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   character?: Character | null;
-  onSaved: (c: Character) => void;
+  onSaved: (result: CharacterMutationResponse) => void;
 }
 
 export function CharacterDialog({
@@ -60,7 +61,7 @@ export function CharacterDialog({
       const result = isEdit
         ? await api.updateCharacter(projectId, character!.id, payload)
         : await api.upsertCharacter(projectId, payload);
-      onSaved(result.character);
+      onSaved(result);
       toast.success(isEdit ? "已更新角色" : "已创建角色");
       onOpenChange(false);
     } catch (e) {

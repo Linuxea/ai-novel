@@ -30,14 +30,13 @@ const STATUS_META: Record<ChapterStatus, { label: string; variant: "outline" | "
 };
 
 export default function ChaptersPage() {
-  const { project, characters, chapters, upsertChapterLocal, removeChapterLocal } =
+  const { project, characters, chapters, replaceChaptersLocal } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
         characters: s.characters,
         chapters: s.chapters,
-        upsertChapterLocal: s.upsertChapterLocal,
-        removeChapterLocal: s.removeChapterLocal,
+        replaceChaptersLocal: s.replaceChaptersLocal,
       })),
     );
   const projectId = project?.id ?? "";
@@ -63,14 +62,15 @@ export default function ChaptersPage() {
     }
     setSaving(true);
     try {
-      const { chapter } = await api.upsertChapter(projectId, {
-        title: form.title,
-        outline: form.outline,
-        notes: form.notes,
-        characterIds: form.characterIds,
-        status: "outline",
-      });
-      upsertChapterLocal(chapter);
+      const { project: updatedProject, chapters: updatedChapters } =
+        await api.upsertChapter(projectId, {
+          title: form.title,
+          outline: form.outline,
+          notes: form.notes,
+          characterIds: form.characterIds,
+          status: "outline",
+        });
+      replaceChaptersLocal(updatedProject, updatedChapters);
       toast.success("已创建章节");
       setDialogOpen(false);
     } catch (e) {
@@ -83,8 +83,9 @@ export default function ChaptersPage() {
   async function handleDelete(chapterId: string, title: string) {
     if (!confirm(`删除章节「${title}」？`)) return;
     try {
-      await api.deleteChapter(projectId, chapterId);
-      removeChapterLocal(chapterId);
+      const { project: updatedProject, chapters: updatedChapters } =
+        await api.deleteChapter(projectId, chapterId);
+      replaceChaptersLocal(updatedProject, updatedChapters);
       toast.success("已删除");
     } catch (e) {
       toast.error((e as Error).message);

@@ -17,13 +17,18 @@ export default function CharactersPage() {
 }
 
 function CharactersContent() {
-  const { project, characters, upsertCharacterLocal, removeCharacterLocal } =
+  const {
+    project,
+    characters,
+    commitCharacterLocal,
+    replaceCharacterDataLocal,
+  } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
         characters: s.characters,
-        upsertCharacterLocal: s.upsertCharacterLocal,
-        removeCharacterLocal: s.removeCharacterLocal,
+        commitCharacterLocal: s.commitCharacterLocal,
+        replaceCharacterDataLocal: s.replaceCharacterDataLocal,
       })),
     );
   const projectId = project?.id ?? "";
@@ -42,8 +47,13 @@ function CharactersContent() {
   async function handleDelete(c: Character) {
     if (!confirm(`删除角色「${c.name}」？相关关系也会清除。`)) return;
     try {
-      await api.deleteCharacter(projectId, c.id);
-      removeCharacterLocal(c.id);
+      const result = await api.deleteCharacter(projectId, c.id);
+      replaceCharacterDataLocal(
+        result.project,
+        result.characters,
+        result.chapters,
+        result.plotNotes,
+      );
       toast.success("已删除");
     } catch (e) {
       toast.error((e as Error).message);
@@ -135,7 +145,9 @@ function CharactersContent() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         character={editing}
-        onSaved={upsertCharacterLocal}
+        onSaved={(result) =>
+          commitCharacterLocal(result.project, result.character)
+        }
       />
     </div>
   );

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
 import { BookOpen, ArrowLeft, AlertCircle } from "lucide-react";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
@@ -13,13 +12,8 @@ export function ProjectShell({
   projectId: string;
   children: React.ReactNode;
 }) {
-  const load = useProjectStore((s) => s.load);
   const project = useProjectStore((s) => s.project);
   const error = useProjectStore((s) => s.error);
-
-  useEffect(() => {
-    load(projectId);
-  }, [projectId, load]);
 
   if (error) {
     return (

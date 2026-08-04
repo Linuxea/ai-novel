@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { z } from "zod";
-import { createProject, deleteProject, projectDir, projectsDir } from "@/lib/storage";
+import {
+  createProject,
+  deleteProject,
+  updateProject,
+  withProjectTransaction,
+  writeProjectFiles,
+  type ProjectFileInput,
+} from "@/lib/storage";
 import { CreateProjectSchema } from "@/lib/api-schemas";
 import {
   CHAT_HISTORY_LIMIT,
+  BeatSheetCacheSchema,
   ChapterSchema,
   CharacterSchema,
+  ConsistencyReportSchema,
   PlotNoteSchema,
   WorldSectionSchema,
 } from "@/lib/types";
@@ -25,6 +32,13 @@ const ImportProjectSchema = z
     summary: z.string().optional(),
     aiModel: z.string().optional(),
     temperature: z.number().min(0).max(2).optional(),
+    status: z.enum(["drafting", "writing", "completed"]).optional(),
+    ragMode: z.enum(["off", "bm25", "embed"]).optional(),
+    ragTopK: z.number().int().min(1).max(20).optional(),
+    generateStrategy: z.enum(["auto", "single", "multi"]).optional(),
+    multiStepCritique: z.boolean().optional(),
+    multiStepRewrite: z.boolean().optional(),
+    autoResolveForeshadow: z.boolean().optional(),
   })
   .passthrough();
 
@@ -36,6 +50,7 @@ const JsonImportSchemas: Record<string, z.ZodTypeAny> = {
   "chat.json": z
     .array(z.unknown())
     .transform((arr) => arr.slice(-CHAT_HISTORY_LIMIT)),
+  "checks.json": z.record(z.string(), ConsistencyReportSchema),
 };
 
 /** 导入项目 zip（由导出功能产生）。返回新项目 id。 */
@@ -74,15 +89,14 @@ export async function POST(req: NextRequest) {
       aiModel: original.aiModel,
       temperature: original.temperature,
     });
-    const project = await createProject(projectInput);
-    projectId = project.id;
-
-    const dir = projectDir(project.id);
+    const createdProject = await createProject(projectInput);
+    projectId = createdProject.id;
     const entries = Object.values(zip.files);
     if (entries.length > MAX_ENTRY_COUNT) {
       throw new Error("压缩包文件数量过多");
     }
     let totalSize = 0;
+    const importedFiles: ProjectFileInput[] = [];
     for (const entry of entries) {
       if (entry.dir) continue;
       const name = entry.name.replace(/\\/g, "/");
@@ -101,18 +115,25 @@ export async function POST(req: NextRequest) {
       if (totalSize > MAX_TOTAL_SIZE) {
         throw new Error("压缩包解压后体积过大");
       }
-      const target = path.join(dir, name);
-      // Zip Slip 防护：解析后的路径必须仍在项目目录内
-      const rel = path.relative(dir, target);
-      if (rel.startsWith("..") || path.isAbsolute(rel)) {
-        continue;
-      }
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.writeFile(target, normalizeImportContent(name, content));
+      importedFiles.push({
+        path: name,
+        content: normalizeImportContent(name, content),
+      });
     }
 
-    // 确保 projects 目录存在
-    await fs.mkdir(projectsDir(), { recursive: true });
+    const project = await withProjectTransaction(createdProject.id, async () => {
+      const updated = await updateProject(createdProject.id, {
+        status: original.status,
+        ragMode: original.ragMode,
+        ragTopK: original.ragTopK,
+        generateStrategy: original.generateStrategy,
+        multiStepCritique: original.multiStepCritique,
+        multiStepRewrite: original.multiStepRewrite,
+        autoResolveForeshadow: original.autoResolveForeshadow,
+      });
+      await writeProjectFiles(createdProject.id, importedFiles);
+      return updated;
+    });
 
     return NextResponse.json({ project }, { status: 201 });
   } catch (e) {
@@ -130,10 +151,20 @@ export async function POST(req: NextRequest) {
 }
 
 function isAllowedImportPath(name: string): boolean {
-  return name in JsonImportSchemas || /^chapters\/[\w-]+\.md$/.test(name);
+  return (
+    name in JsonImportSchemas ||
+    /^chapters\/[\w-]+\.md$/.test(name) ||
+    /^chapters\/[\w-]+\.beats\.json$/.test(name)
+  );
 }
 
 function normalizeImportContent(name: string, content: Buffer): Buffer | string {
+  if (/^chapters\/[\w-]+\.beats\.json$/.test(name)) {
+    const parsed = BeatSheetCacheSchema.parse(
+      JSON.parse(content.toString("utf-8")) as unknown,
+    );
+    return JSON.stringify(parsed, null, 2);
+  }
   const schema = JsonImportSchemas[name];
   if (!schema) return content;
   const parsed = schema.parse(JSON.parse(content.toString("utf-8")) as unknown);

@@ -30,6 +30,7 @@ export interface RagMeta {
 
 export interface RagHit {
   source: RagSource;
+  ownerId: string;
   ownerTitle: string;
   chapterOrder?: number;
   text: string;
@@ -40,6 +41,8 @@ export interface RagQuery {
   outline: string;
   characterNames: string[];
   pendingForeshadowTitles: string[];
+  excludeOwnerIds?: string[];
+  maxChapterOrder?: number;
 }
 
 const CHUNK_MAX_LEN = 400;
@@ -70,12 +73,12 @@ export function chunkText(
       continue;
     }
     if (buf && (buf + "\n\n" + p).length > maxLen) {
+      const overlap = bufParas[bufParas.length - 1];
       flush();
       // overlap：保留上一块最后一段作为新块开头
-      if (bufParas.length) {
-        const last = bufParas[bufParas.length - 1];
-        buf = last;
-        bufParas = [last];
+      if (overlap && (overlap + "\n\n" + p).length <= maxLen) {
+        buf = overlap;
+        bufParas = [overlap];
       }
     }
     buf = buf ? buf + "\n\n" + p : p;

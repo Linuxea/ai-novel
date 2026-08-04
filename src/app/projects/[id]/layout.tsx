@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { getProject } from "@/lib/storage";
+import { getProjectData } from "@/lib/storage";
 import { ProjectShell } from "@/components/layout/project-shell";
+import { ProjectStoreProvider } from "@/lib/store";
 
 type Props = { children: React.ReactNode; params: Promise<{ id: string }> };
 
@@ -9,8 +10,12 @@ export default async function ProjectLayout({
   params,
 }: Props) {
   const { id } = await params;
-  const project = await getProject(id);
-  if (!project) notFound();
+  const data = await getProjectData(id);
+  if (!data) notFound();
 
-  return <ProjectShell projectId={id}>{children}</ProjectShell>;
+  return (
+    <ProjectStoreProvider key={id} initialData={data}>
+      <ProjectShell projectId={id}>{children}</ProjectShell>
+    </ProjectStoreProvider>
+  );
 }

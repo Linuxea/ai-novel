@@ -117,6 +117,10 @@ export const UpdatePlotNoteSchema = PlotNoteFields.partial()
     path: ["expectedResolveChapter"],
   });
 
+export const ResolvePlotNoteSchema = z
+  .object({ chapterId: NonEmptyString })
+  .strict();
+
 export const CreateChapterSchema = z
   .object({
     title: NonEmptyString,
@@ -131,17 +135,25 @@ export const CreateChapterSchema = z
 export const UpdateChapterSchema = z
   .object({
     title: NonEmptyString.optional(),
-    order: z.number().int().positive().optional(),
     outline: z.string().optional(),
     characterIds: z.array(z.string()).optional(),
     notes: z.string().optional(),
     status: ChapterStatusSchema.optional(),
-    wordCount: z.number().int().nonnegative().optional(),
   })
   .strict();
 
 export const SaveChapterContentSchema = z
-  .object({ content: z.string() })
+  .object({
+    content: z.string(),
+    expectedRevision: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const ChapterArtifactRequestSchema = z
+  .object({
+    expectedContentRevision: z.number().int().nonnegative(),
+    force: z.boolean().optional(),
+  })
   .strict();
 
 export const SaveChatSchema = z
@@ -157,3 +169,22 @@ export const ChatRequestSchema = z
     messageId: z.string().optional(),
   })
   .strict();
+
+export type CreateProjectRequest = z.input<typeof CreateProjectSchema>;
+export type UpdateProjectRequest = z.input<typeof UpdateProjectSchema>;
+export type CreateCharacterRequest = z.input<typeof CreateCharacterSchema>;
+export type UpdateCharacterRequest = z.input<typeof UpdateCharacterSchema>;
+export type UpsertRelationshipRequest = z.input<
+  typeof UpsertRelationshipApiSchema
+>;
+export type LayoutPositionRequest = z.input<typeof LayoutPositionSchema>;
+export type CreateWorldSectionRequest = z.input<
+  typeof CreateWorldSectionSchema
+>;
+export type UpdateWorldSectionRequest = z.input<
+  typeof UpdateWorldSectionSchema
+>;
+export type CreatePlotNoteRequest = z.input<typeof CreatePlotNoteSchema>;
+export type UpdatePlotNoteRequest = z.input<typeof UpdatePlotNoteSchema>;
+export type CreateChapterRequest = z.input<typeof CreateChapterSchema>;
+export type UpdateChapterRequest = z.input<typeof UpdateChapterSchema>;

@@ -2,15 +2,23 @@ import "server-only";
 import { generateObject, streamText } from "ai";
 import { getModel } from "@/lib/ai/client";
 import {
+  BEAT_SHEET_CACHE_VERSION,
   BeatSheetSchema,
   type Beat,
   type BeatSheet,
+  type BeatSheetCache,
   type Project,
 } from "@/lib/types";
 import {
+  hashContent,
   readBeatSheet,
+  RevisionConflictError,
   writeBeatSheet,
 } from "@/lib/storage";
+import {
+  createGenerationEventResponse,
+  textStreamToGenerationResponse,
+} from "@/lib/ai/generation-stream";
 import {
   assembleContextBundle,
   buildSharedContext,
@@ -30,6 +38,14 @@ interface ChapterRef {
   order: number;
 }
 
+function renderRagHits(ragHits: RagHit[] | undefined): string {
+  if (!ragHits?.length) return "";
+  return `\n\n# 相关历史片段（只作为事实参照，不得照抄）\n${ragHits
+    .slice(0, 4)
+    .map((hit) => `- [${hit.ownerTitle}] ${hit.text.slice(0, 280)}`)
+    .join("\n")}`;
+}
+
 function isAbort(e: unknown): boolean {
   return e instanceof Error && e.name === "AbortError";
 }
@@ -39,6 +55,7 @@ function buildBeatSheetPrompt(
   bundle: ContextBundle,
   chapter: ChapterRef,
   existing: string,
+  ragHits?: RagHit[],
 ): string {
   const due = classifyDuePlotNotes(bundle.plotNotes, chapter.order);
   const showDue = hasUrgentDue(due) || due.approaching.length > 0;
@@ -48,7 +65,7 @@ function buildBeatSheetPrompt(
 
   return `你是一位资深小说结构师，正在为《${bundle.project.title}》第${chapter.order}章《${chapter.title}》规划写作结构（beat sheet / 分镜）。
 
-${buildSharedContext(bundle, chapter.order)}${dueBlock}
+${buildSharedContext(bundle, chapter.order)}${renderRagHits(ragHits)}${dueBlock}
 
 # 当前任务
 把本章拆成 3-8 个 beat（叙事单元：场景 / 转折 / 情绪点）。每个 beat 包含：summary（本 beat 发生什么，1-2 句）、targetWords（目标字数，各 beat 合计接近本章预期总长，约 3000 字）、plotHooks（本 beat 要埋/收的伏笔标题，从上方"本章需处理的伏笔"中选取）。
@@ -68,6 +85,7 @@ function buildExpandBeatPrompt(
   chapter: ChapterRef,
   prevSummaries: string[],
   accumulatedTail: string,
+  ragHits?: RagHit[],
 ): string {
   const hooks = beat.plotHooks?.length
     ? `\n本段需自然织入的伏笔：${beat.plotHooks.join("、")}（通过场景/对话/物件让伏笔"发生"，禁止生硬塞入）`
@@ -79,7 +97,7 @@ function buildExpandBeatPrompt(
 
   return `你是一位才华横溢的中文小说作家，正在为《${bundle.project.title}》第${chapter.order}章撰写其中一个段落。
 
-${buildSharedContext(bundle, chapter.order)}
+${buildSharedContext(bundle, chapter.order)}${renderRagHits(ragHits)}
 ${prevBlock}
 
 # 当前任务
@@ -107,6 +125,7 @@ function singleResponse(
   project: Project,
   ragHits: RagHit[] | undefined,
   signal: AbortSignal | undefined,
+  generationId: string,
 ): Response {
   const result = streamText({
     model: getModel(project.aiModel || undefined),
@@ -115,7 +134,7 @@ function singleResponse(
     prompt: "请开始撰写本章正文。",
     abortSignal: signal,
   });
-  return result.toTextStreamResponse();
+  return textStreamToGenerationResponse(result.textStream, generationId);
 }
 
 export interface MultiStepOpts {
@@ -127,6 +146,9 @@ export interface MultiStepOpts {
   mode: "continue" | "regenerate";
   project: Project;
   ragHits?: RagHit[];
+  generationId: string;
+  contentRevision: number;
+  projectRevision: number;
   signal?: AbortSignal;
 }
 
@@ -137,26 +159,67 @@ export interface MultiStepOpts {
 export async function streamMultiStep(opts: MultiStepOpts): Promise<Response> {
   const signal = opts.signal;
 
-  // 1. beat 规划（continue 复用缓存；regenerate 重新规划）
+  // 1. beat 规划（只有完全匹配当前输入的 continue 缓存才可复用）
   let sheet: BeatSheet | null = null;
   try {
     if (opts.mode === "continue") {
-      sheet = await readBeatSheet(opts.projectId, opts.chapterId);
+      const cached = await readBeatSheet(opts.projectId, opts.chapterId);
+      if (
+        cached?.mode === "continue" &&
+        cached.baseContentHash === hashContent(opts.existing) &&
+        cached.outlineHash === hashContent(opts.chapter.outline) &&
+        cached.contentRevision === opts.contentRevision &&
+        cached.projectRevision === opts.projectRevision &&
+        cached.modelId === (opts.project.aiModel || "")
+      ) {
+        sheet = cached.sheet;
+      }
     }
     if (!sheet) {
       const res = await generateObject({
         model: getModel(opts.project.aiModel || undefined),
         schema: BeatSheetSchema,
-        system: buildBeatSheetPrompt(opts.bundle, opts.chapter, opts.existing),
+        system: buildBeatSheetPrompt(
+          opts.bundle,
+          opts.chapter,
+          opts.existing,
+          opts.ragHits,
+        ),
         temperature: 0.4,
         prompt: "请规划本章分镜（beat sheet）。",
         abortSignal: signal,
       });
       sheet = res.object;
-      await writeBeatSheet(opts.projectId, opts.chapterId, sheet);
+      const cache: BeatSheetCache = {
+        version: BEAT_SHEET_CACHE_VERSION,
+        mode: opts.mode,
+        baseContentHash: hashContent(opts.existing),
+        outlineHash: hashContent(opts.chapter.outline),
+        contentRevision: opts.contentRevision,
+        projectRevision: opts.projectRevision,
+        modelId: opts.project.aiModel || "",
+        createdAt: new Date().toISOString(),
+        sheet,
+      };
+      try {
+        const accepted = await writeBeatSheet(
+          opts.projectId,
+          opts.chapterId,
+          cache,
+        );
+        if (!accepted) {
+          throw new RevisionConflictError(
+            opts.projectRevision,
+            opts.projectRevision + 1,
+            "生成规划期间项目或正文已变化，请重试",
+          );
+        }
+      } catch (error) {
+        if (error instanceof RevisionConflictError) throw error;
+      }
     }
   } catch (e) {
-    if (isAbort(e)) throw e;
+    if (isAbort(e) || e instanceof RevisionConflictError) throw e;
     // beat 失败：降级单次
     return singleResponse(
       opts.bundle,
@@ -165,58 +228,45 @@ export async function streamMultiStep(opts: MultiStepOpts): Promise<Response> {
       opts.project,
       opts.ragHits,
       signal,
+      opts.generationId,
     );
   }
 
   const sheetFinal: BeatSheet = sheet;
-  const enc = new TextEncoder();
   const model = getModel(opts.project.aiModel || undefined);
   const temperature = opts.project.temperature ?? 0.85;
 
   // 2. 逐 beat 扩写，聚合成单条文本流
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let accumulated = opts.mode === "continue" ? opts.existing : "";
-      const prevSummaries: string[] = [];
-      try {
-        for (let i = 0; i < sheetFinal.beats.length; i++) {
-          const beat = sheetFinal.beats[i];
-          const tail = accumulated.slice(-800);
-          const result = streamText({
-            model,
-            system: buildExpandBeatPrompt(
-              opts.bundle,
-              beat,
-              opts.chapter,
-              prevSummaries,
-              tail,
-            ),
-            temperature,
-            prompt: `请扩写第 ${i + 1} 段（目标约 ${beat.targetWords} 字），直接输出正文。`,
-            abortSignal: signal,
-          });
-          let beatText = "";
-          for await (const chunk of result.textStream) {
-            beatText += chunk;
-            controller.enqueue(enc.encode(chunk));
-          }
-          accumulated += beatText;
-          prevSummaries.push(beat.summary);
-        }
-      } catch (e) {
-        if (!isAbort(e)) {
-          controller.enqueue(
-            enc.encode(`\n\n[生成中断：${(e as Error).message}]`),
-          );
-        }
-      } finally {
-        controller.close();
+  return createGenerationEventResponse(async (emit) => {
+    let accumulated = opts.mode === "continue" ? opts.existing : "";
+    const prevSummaries: string[] = [];
+    for (let i = 0; i < sheetFinal.beats.length; i++) {
+      const beat = sheetFinal.beats[i];
+      emit({ type: "progress", current: i + 1, total: sheetFinal.beats.length });
+      const tail = accumulated.slice(-800);
+      const result = streamText({
+        model,
+        system: buildExpandBeatPrompt(
+          opts.bundle,
+          beat,
+          opts.chapter,
+          prevSummaries,
+          tail,
+          opts.ragHits,
+        ),
+        temperature,
+        prompt: `请扩写第 ${i + 1} 段（目标约 ${beat.targetWords} 字），直接输出正文。`,
+        abortSignal: signal,
+      });
+      let beatText = "";
+      for await (const text of result.textStream) {
+        beatText += text;
+        emit({ type: "delta", text });
       }
-    },
-  });
-
-  return new Response(stream, {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+      accumulated += beatText;
+      prevSummaries.push(beat.summary);
+    }
+    emit({ type: "done", generationId: opts.generationId });
   });
 }
 

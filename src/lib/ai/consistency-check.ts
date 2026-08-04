@@ -12,12 +12,14 @@ import {
 import {
   getProjectData,
   hashContent,
-  readChapterContent,
+  readChapterDocument,
+  RevisionConflictError,
   saveCheck,
-  updatePlotNote,
   now,
 } from "@/lib/storage";
 import { classifyDuePlotNotes } from "@/lib/plot-due";
+
+const CHECK_PROMPT_VERSION = 2;
 
 /** 截断到上限；超长则取头尾，中间标注省略字数 */
 function cap(s: string, max: number): string {
@@ -127,7 +129,7 @@ function buildConsistencyCheckPrompt(ctx: CheckContext): {
 - other：其他
 
 # 待回收/到期伏笔清单（重点核对这些是否被正文推翻或错误回收）
-${dueForeshadows.length ? dueForeshadows.map((p) => `- 《${p.title}》：${p.content || "（无详情）"}`).join("\n") : "（本章无强制到期的伏笔）"}
+${dueForeshadows.length ? dueForeshadows.map((p) => `- [id:${p.id}]《${p.title}》：${p.content || "（无详情）"}`).join("\n") : "（本章无强制到期的伏笔）"}
 
 请严格按 schema 输出，message 用中文，简明具体（点名道姓、点事件）。`;
 
@@ -173,13 +175,29 @@ ${cap(ctx.newContent, 8000)}`;
 export async function runConsistencyCheck(
   projectId: string,
   chapterId: string,
+  signal?: AbortSignal,
 ): Promise<ConsistencyReport> {
   const data = await getProjectData(projectId);
   if (!data) throw new Error("项目不存在");
-  const chapter = data.chapters.find((c) => c.id === chapterId);
-  if (!chapter) throw new Error("章节不存在");
-  const content = await readChapterContent(projectId, chapterId);
+  const document = await readChapterDocument(projectId, chapterId);
+  const chapter = document.chapter;
+  const content = document.content;
   const contentHash = hashContent(content);
+  const contentRevision = chapter.contentRevision;
+  const projectRevision = data.project.revision;
+  const inputFingerprint = hashContent(
+    JSON.stringify({
+      promptVersion: CHECK_PROMPT_VERSION,
+      projectRevision,
+      contentRevision,
+      contentHash,
+      modelId: data.project.aiModel,
+    }),
+  );
+  const saveOptions = {
+    expectedProjectRevision: projectRevision,
+    expectedContentRevision: contentRevision,
+  };
 
   const empty: ConsistencyReport = {
     summary: "正文为空，跳过检查",
@@ -188,50 +206,62 @@ export async function runConsistencyCheck(
     chapterId,
     checkedAt: now(),
     contentHash,
+    contentRevision,
+    projectRevision,
+    committedProjectRevision: projectRevision,
+    inputFingerprint,
+    promptVersion: CHECK_PROMPT_VERSION,
   };
   if (!content.trim()) {
-    await saveCheck(projectId, chapterId, empty);
-    return empty;
+    return saveCheck(projectId, chapterId, empty, saveOptions);
   }
 
   const ctx = gatherCheckContext(data, chapter, content);
   const { system, prompt } = buildConsistencyCheckPrompt(ctx);
 
   try {
+    const timeoutSignal = AbortSignal.timeout(45_000);
+    const abortSignal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
     const { object } = await generateObject({
       model: getModel(data.project.aiModel || undefined),
       schema: ConsistencyCheckOutputSchema,
       system,
       prompt,
       temperature: 0.2,
-      abortSignal: AbortSignal.timeout(45_000),
+      abortSignal,
     });
+
+    const allowedPlotNoteIds = new Set(ctx.dueForeshadows.map((p) => p.id));
+    const foreshadowResolutions = object.foreshadowResolutions.filter((item) =>
+      allowedPlotNoteIds.has(item.plotNoteId),
+    );
 
     const report: ConsistencyReport = {
       ...object,
+      foreshadowResolutions,
       chapterId,
       checkedAt: now(),
       contentHash,
+      contentRevision,
+      projectRevision,
+      committedProjectRevision: projectRevision,
+      inputFingerprint,
+      promptVersion: CHECK_PROMPT_VERSION,
     };
-    await saveCheck(projectId, chapterId, report);
+    return saveCheck(projectId, chapterId, report, {
+      ...saveOptions,
+      resolvedPlotNoteIds: data.project.autoResolveForeshadow
+        ? foreshadowResolutions
+            .filter((item) => item.confidence === "high")
+            .map((item) => item.plotNoteId)
+        : [],
+      resolvedInChapter: chapter.order,
+    });
 
-    // 伏笔回填：仅在开启自动回收且高置信度时推进状态，否则仅作为建议（UI 人工确认）
-    if (data.project.autoResolveForeshadow) {
-      for (const res of object.foreshadowResolutions) {
-        if (res.confidence !== "high") continue;
-        try {
-          await updatePlotNote(projectId, res.plotNoteId, {
-            resolvedInChapter: chapter.order,
-            status: "resolved",
-          });
-        } catch {
-          // 单条回填失败不影响其余
-        }
-      }
-    }
-
-    return report;
   } catch (e) {
+    if (e instanceof RevisionConflictError) throw e;
     const errReport: ConsistencyReport = {
       summary: "检查失败",
       findings: [],
@@ -239,9 +269,13 @@ export async function runConsistencyCheck(
       chapterId,
       checkedAt: now(),
       contentHash,
+      contentRevision,
+      projectRevision,
+      committedProjectRevision: projectRevision,
+      inputFingerprint,
+      promptVersion: CHECK_PROMPT_VERSION,
       error: (e as Error).message,
     };
-    await saveCheck(projectId, chapterId, errReport);
-    return errReport;
+    return saveCheck(projectId, chapterId, errReport, saveOptions);
   }
 }

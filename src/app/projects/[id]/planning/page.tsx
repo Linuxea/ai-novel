@@ -48,14 +48,20 @@ const STATUS_BADGE_CLASS: Record<PlotStatus, string> = {
 };
 
 export default function PlanningPage() {
-  const { project, plotNotes, chapters, upsertPlotNoteLocal, removePlotNoteLocal } =
+  const {
+    project,
+    plotNotes,
+    chapters,
+    commitPlotNoteLocal,
+    replacePlotNotesLocal,
+  } =
     useProjectStore(
       useShallow((s) => ({
         project: s.project,
         plotNotes: s.plotNotes,
         chapters: s.chapters,
-        upsertPlotNoteLocal: s.upsertPlotNoteLocal,
-        removePlotNoteLocal: s.removePlotNoteLocal,
+        commitPlotNoteLocal: s.commitPlotNoteLocal,
+        replacePlotNotesLocal: s.replacePlotNotesLocal,
       })),
     );
   const projectId = project?.id ?? "";
@@ -113,7 +119,7 @@ export default function PlanningPage() {
       const result = isEdit
         ? await api.updatePlanning(projectId, editing!.id, form)
         : await api.upsertPlanning(projectId, form);
-      upsertPlotNoteLocal(result.note);
+      commitPlotNoteLocal(result.project, result.note);
       toast.success(isEdit ? "已更新" : "已创建");
       setDialogOpen(false);
     } catch (e) {
@@ -126,8 +132,8 @@ export default function PlanningPage() {
   async function handleDelete(p: PlotNote) {
     if (!confirm(`删除「${p.title}」？`)) return;
     try {
-      await api.deletePlanning(projectId, p.id);
-      removePlotNoteLocal(p.id);
+      const result = await api.deletePlanning(projectId, p.id);
+      replacePlotNotesLocal(result.project, result.plotNotes);
       toast.success("已删除");
     } catch (e) {
       toast.error((e as Error).message);
@@ -144,7 +150,7 @@ export default function PlanningPage() {
 
   const pendingCount = plotNotes.filter((p) => p.status !== "resolved").length;
 
-  const currentOrder = inferCurrentOrder(chapters.map((c) => c.order));
+  const currentOrder = inferCurrentOrder(chapters);
   const dueIds = useMemo(() => {
     if (currentOrder == null) return new Set<string>();
     const due = classifyDuePlotNotes(plotNotes, currentOrder);

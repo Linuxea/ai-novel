@@ -3,7 +3,15 @@ import { generateText } from "ai";
 import { isAIConfigured } from "@/env";
 import { getModel } from "@/lib/ai/client";
 import { buildOutlineSyncPrompt } from "@/lib/ai/writer-prompt";
-import { getProject, listChapters, readChapterContent } from "@/lib/storage";
+import { ChapterArtifactRequestSchema } from "@/lib/api-schemas";
+import { handleRouteError, parseJson } from "@/lib/api-route";
+import type { ChapterMutationResponse } from "@/lib/api-contracts";
+import {
+  getProject,
+  readChapterDocument,
+  RevisionConflictError,
+} from "@/lib/storage";
+import { updateChapterOutlineCommand } from "@/lib/application/project-commands";
 
 type Params = {
   params: Promise<{ id: string; chapterId: string }>;
@@ -12,8 +20,7 @@ type Params = {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** 根据章节正文生成大纲（非流式）。端点只生成不落盘，由客户端负责保存。 */
-export async function POST(_req: NextRequest, { params }: Params) {
+export async function POST(req: NextRequest, { params }: Params) {
   if (!isAIConfigured()) {
     return NextResponse.json(
       { error: "尚未配置 AI，请在 .env.local 中设置后重启。" },
@@ -22,39 +29,52 @@ export async function POST(_req: NextRequest, { params }: Params) {
   }
 
   const { id, chapterId } = await params;
-
-  const project = await getProject(id);
-  if (!project) {
-    return NextResponse.json({ error: "项目不存在" }, { status: 404 });
-  }
-
-  const chapters = await listChapters(id);
-  const chapter = chapters.find((c) => c.id === chapterId);
-  if (!chapter) {
-    return NextResponse.json({ error: "章节不存在" }, { status: 404 });
-  }
-
-  const content = await readChapterContent(id, chapterId);
-  if (!content.trim()) {
-    return NextResponse.json(
-      { error: "正文为空，无法同步大纲" },
-      { status: 400 },
-    );
-  }
-
   try {
-    const outline = chapter.outline?.trim() ?? "";
+    const { expectedContentRevision } = await parseJson(
+      req,
+      ChapterArtifactRequestSchema,
+    );
+    const project = await getProject(id);
+    if (!project) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
+    const { chapter, content } = await readChapterDocument(id, chapterId);
+    if (chapter.contentRevision !== expectedContentRevision) {
+      throw new RevisionConflictError(
+        expectedContentRevision,
+        chapter.contentRevision,
+      );
+    }
+    if (!content.trim()) {
+      return NextResponse.json(
+        { error: "正文为空，无法同步大纲" },
+        { status: 400 },
+      );
+    }
+
+    const existingOutline = chapter.outline.trim();
     const result = await generateText({
       model: getModel(project.aiModel || undefined),
-      system: buildOutlineSyncPrompt(project, chapter, outline),
-      prompt: `【原有大纲】\n${outline || "（无）"}\n\n【本章正文】\n${content}`,
+      system: buildOutlineSyncPrompt(project, chapter, existingOutline),
+      prompt: `【原有大纲】\n${existingOutline || "（无）"}\n\n【本章正文】\n${content}`,
       temperature: 0.3,
+      abortSignal: AbortSignal.any([
+        req.signal,
+        AbortSignal.timeout(45_000),
+      ]),
     });
-    return NextResponse.json({ outline: result.text.trim() });
-  } catch (e) {
-    return NextResponse.json(
-      { error: `大纲生成失败：${(e as Error).message}` },
-      { status: 500 },
+    const response = await updateChapterOutlineCommand(
+      id,
+      chapterId,
+      result.text.trim(),
+      {
+        expectedProjectRevision: project.revision,
+        expectedContentRevision,
+        expectedOutline: chapter.outline,
+      },
     );
+    return NextResponse.json(response satisfies ChapterMutationResponse);
+  } catch (error) {
+    return handleRouteError(error);
   }
 }

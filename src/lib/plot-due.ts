@@ -1,4 +1,4 @@
-import type { PlotNote } from "@/lib/types";
+import type { Chapter, PlotNote } from "@/lib/types";
 
 /** 临近窗口：到期前 N 章开始提示"宜铺垫" */
 export const APPROACH_WINDOW = 2;
@@ -31,7 +31,7 @@ export function classifyDuePlotNotes(
   for (const p of notes) {
     if (p.status === "resolved") continue;
 
-    const isPlanted = p.plantedInChapter != null;
+    const isPlanted = p.plantedInChapter != null || p.status === "active";
     const isResolved = p.resolvedInChapter != null;
 
     if (
@@ -73,12 +73,12 @@ export function hasUrgentDue(due: DueClassification): boolean {
 }
 
 /** 取"当前写作章"：第一个未完成章的 order，全完成则返回 undefined */
-export function inferCurrentOrder(orders: number[]): number | undefined {
-  const sorted = [...orders].sort((a, b) => a - b);
-  for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i] !== i + 1) return sorted[i] ?? i + 1;
-  }
-  return undefined;
+export function inferCurrentOrder(
+  chapters: Pick<Chapter, "order" | "status">[],
+): number | undefined {
+  return chapters
+    .filter((chapter) => chapter.status !== "done")
+    .sort((a, b) => a.order - b.order)[0]?.order;
 }
 
 /** 把分类结果渲染成 prompt 中的"本章需处理"段落（中文） */

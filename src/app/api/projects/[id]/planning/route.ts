@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPlotNote, listPlotNotes } from "@/lib/storage";
+import { listPlotNotes } from "@/lib/storage";
+import { createPlotNoteCommand } from "@/lib/application/project-commands";
 import { CreatePlotNoteSchema } from "@/lib/api-schemas";
 import { handleRouteError, parseJson } from "@/lib/api-route";
+import type { PlotNoteMutationResponse } from "@/lib/api-contracts";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -19,8 +21,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   try {
     const body = await parseJson(req, CreatePlotNoteSchema);
-    const note = await createPlotNote(id, body);
-    return NextResponse.json({ note }, { status: 201 });
+    const result = await createPlotNoteCommand(id, body);
+    return NextResponse.json(
+      result satisfies PlotNoteMutationResponse,
+      { status: 201 },
+    );
   } catch (e) {
     return handleRouteError(e);
   }

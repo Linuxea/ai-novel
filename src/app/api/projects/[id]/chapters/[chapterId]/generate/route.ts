@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { streamText } from "ai";
+import { nanoid } from "nanoid";
 import { isAIConfigured } from "@/env";
 import { getModel } from "@/lib/ai/client";
 import {
@@ -9,13 +10,13 @@ import {
   type PrevChapterContext,
 } from "@/lib/ai/writer-prompt";
 import { streamMultiStep } from "@/lib/ai/multi-step";
+import { textStreamToGenerationResponse } from "@/lib/ai/generation-stream";
 import {
-  getProject,
   getProjectData,
-  listChapters,
   readChapterContent,
 } from "@/lib/storage";
 import { retrieveContext } from "@/lib/rag/retrieve";
+import { handleRouteError } from "@/lib/api-route";
 
 type Params = {
   params: Promise<{ id: string; chapterId: string }>;
@@ -60,19 +61,33 @@ export async function POST(req: NextRequest, { params }: Params) {
   const mode: GenerateMode =
     modeParam === "regenerate" ? "regenerate" : "continue";
 
-  const project = await getProject(id);
-  if (!project) {
-    return NextResponse.json({ error: "项目不存在" }, { status: 404 });
-  }
-
   const data = await getProjectData(id);
   if (!data) {
     return NextResponse.json({ error: "项目数据读取失败" }, { status: 404 });
   }
-  const chapters = await listChapters(id);
+  const project = data.project;
+  const chapters = data.chapters;
   const chapter = chapters.find((c) => c.id === chapterId);
   if (!chapter) {
     return NextResponse.json({ error: "章节不存在" }, { status: 404 });
+  }
+  const revisionParam = req.nextUrl.searchParams.get("revision");
+  const expectedRevision = Number(revisionParam);
+  if (
+    revisionParam === null ||
+    !Number.isInteger(expectedRevision) ||
+    expectedRevision < 0 ||
+    expectedRevision !== chapter.contentRevision
+  ) {
+    return NextResponse.json(
+      {
+        error: "正文已在其他页面更新，请刷新后再生成",
+        code: "REVISION_CONFLICT",
+        expectedRevision,
+        actualRevision: chapter.contentRevision,
+      },
+      { status: 409 },
+    );
   }
 
   // regenerate：从零生成，忽略磁盘已有正文；continue：续写
@@ -118,6 +133,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           outline: chapter.outline ?? "",
           characterNames: charNames,
           pendingForeshadowTitles: pendingForeshadows,
+          excludeOwnerIds: [chapterId],
+          maxChapterOrder: chapter.order - 1,
         },
         project.ragTopK ?? 6,
         project.ragMode === "embed" ? "embed" : "bm25",
@@ -128,6 +145,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const strategy = resolveStrategy(req, project, mode, existing);
+  const generationId = nanoid(12);
 
   // 多步：beat 规划 → 逐 beat 扩写 → 聚合流（beat 失败内部降级单次）
   if (strategy === "multi") {
@@ -141,6 +159,9 @@ export async function POST(req: NextRequest, { params }: Params) {
         mode,
         project,
         ragHits,
+        generationId,
+        contentRevision: chapter.contentRevision,
+        projectRevision: project.revision,
         signal: req.signal,
       });
     } catch (e) {
@@ -150,10 +171,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           headers: { "Content-Type": "text/plain; charset=utf-8" },
         });
       }
-      return NextResponse.json(
-        { error: `多步生成失败：${(e as Error).message}` },
-        { status: 500 },
-      );
+      return handleRouteError(e);
     }
   }
 
@@ -174,5 +192,5 @@ export async function POST(req: NextRequest, { params }: Params) {
     );
   }
 
-  return result.toTextStreamResponse();
+  return textStreamToGenerationResponse(result.textStream, generationId);
 }

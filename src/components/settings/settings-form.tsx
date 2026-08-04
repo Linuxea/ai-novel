@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +60,7 @@ function SettingsFormInner({
   defaultModel: string;
   embedConfigured: boolean;
 }) {
-  const load = useProjectStore(useShallow((s) => s.load));
+  const setProjectLocal = useProjectStore((state) => state.setProjectLocal);
   const projectId = project.id;
   const [form, setForm] = useState({
     title: project.title,
@@ -95,7 +94,13 @@ function SettingsFormInner({
     try {
       const res = await api.rebuildRagIndex(projectId);
       setRagChunks(res.chunkCount);
-      toast.success(`索引已重建（${res.chunkCount} 个片段）`);
+      if (res.embedError) {
+        toast.warning(
+          `关键词索引已重建，但向量化失败：${res.embedError}`,
+        );
+      } else {
+        toast.success(`索引已重建（${res.chunkCount} 个片段）`);
+      }
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -110,8 +115,8 @@ function SettingsFormInner({
     }
     setSaving(true);
     try {
-      await api.updateProject(projectId, form);
-      await load(projectId);
+      const { project: updated } = await api.updateProject(projectId, form);
+      setProjectLocal(updated);
       toast.success("已保存");
     } catch (e) {
       toast.error((e as Error).message);

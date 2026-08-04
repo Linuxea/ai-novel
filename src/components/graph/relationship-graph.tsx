@@ -43,6 +43,7 @@ import {
   type Character,
   type RelationshipType,
 } from "@/lib/types";
+import type { CharacterMutationResponse } from "@/lib/api-contracts";
 
 const nodeTypes: NodeTypes = { character: CharacterNode };
 
@@ -55,8 +56,11 @@ function circleLayout(count: number, radius = 220) {
 }
 
 export function RelationshipGraph({ projectId }: { projectId: string }) {
-  const { characters, reload } = useProjectStore(
-    useShallow((s) => ({ characters: s.characters, reload: s.reload })),
+  const { characters, commitCharacterLocal } = useProjectStore(
+    useShallow((s) => ({
+      characters: s.characters,
+      commitCharacterLocal: s.commitCharacterLocal,
+    })),
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -96,12 +100,17 @@ export function RelationshipGraph({ projectId }: { projectId: string }) {
   const onNodeDragStop = useCallback(
     async (_evt: unknown, node: Node) => {
       try {
-        await api.saveCharacterLayout(projectId, node.id, node.position);
+        const result = await api.saveCharacterLayout(
+          projectId,
+          node.id,
+          node.position,
+        );
+        commitCharacterLocal(result.project, result.character);
       } catch {
         /* 静默失败 */
       }
     },
-    [projectId],
+    [commitCharacterLocal, projectId],
   );
 
   const hasGraph = characters.length > 0;
@@ -168,7 +177,9 @@ export function RelationshipGraph({ projectId }: { projectId: string }) {
         onOpenChange={setDialogOpen}
         projectId={projectId}
         characters={characters}
-        onAdded={reload}
+        onAdded={(result) =>
+          commitCharacterLocal(result.project, result.character)
+        }
       />
     </div>
   );
@@ -202,7 +213,7 @@ function AddRelationshipDialog({
   onOpenChange: (v: boolean) => void;
   projectId: string;
   characters: Character[];
-  onAdded: () => void;
+  onAdded: (result: CharacterMutationResponse) => void;
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -221,13 +232,13 @@ function AddRelationshipDialog({
     }
     setSaving(true);
     try {
-      await api.addRelationship(projectId, {
+      const result = await api.addRelationship(projectId, {
         characterId: from,
         targetId: to,
         type,
         description: desc,
       });
-      await onAdded();
+      onAdded(result);
       toast.success("已添加关系");
       onOpenChange(false);
       setFrom("");

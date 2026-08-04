@@ -23,6 +23,7 @@ export async function embedBatch(texts: string[]): Promise<number[][]> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ model: env.EMBED_MODEL, input: slice }),
+      signal: AbortSignal.timeout(60_000),
     });
     if (!resp.ok) {
       const t = await resp.text().catch(() => "");

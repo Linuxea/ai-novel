@@ -102,8 +102,11 @@ export const ChapterSchema = z.object({
   wordCount: z.number().optional().default(0),
   updatedAt: z.string().optional(),
   contentHash: z.string().optional().default(""),
+  contentRevision: z.number().int().nonnegative().optional().default(0),
   summary: z.string().optional().default(""),
   summaryOfContentHash: z.string().optional().default(""),
+  summaryInputFingerprint: z.string().optional().default(""),
+  summaryPromptVersion: z.number().int().positive().optional().default(1),
   summaryGeneratedAt: z.string().optional(),
 });
 export type Chapter = z.infer<typeof ChapterSchema>;
@@ -155,8 +158,13 @@ export type PlotNote = z.infer<typeof PlotNoteSchema>;
 /** 项目 */
 export const ProjectStatusSchema = z.enum(["drafting", "writing", "completed"]);
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
+export const CURRENT_PROJECT_SCHEMA_VERSION = 1 as const;
 
 export const ProjectSchema = z.object({
+  schemaVersion: z
+    .literal(CURRENT_PROJECT_SCHEMA_VERSION)
+    .optional()
+    .default(CURRENT_PROJECT_SCHEMA_VERSION),
   id: z.string(),
   title: z.string(),
   genre: z.string().describe("题材，如 玄幻/科幻/言情/悬疑"),
@@ -173,6 +181,7 @@ export const ProjectSchema = z.object({
   multiStepCritique: z.boolean().optional().default(true),
   multiStepRewrite: z.boolean().optional().default(false),
   autoResolveForeshadow: z.boolean().optional().default(false),
+  revision: z.number().int().nonnegative().optional().default(0),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -356,6 +365,11 @@ export const ConsistencyReportSchema = ConsistencyCheckOutputSchema.extend({
   chapterId: z.string(),
   checkedAt: z.string(),
   contentHash: z.string(),
+  contentRevision: z.number().int().nonnegative().optional().default(0),
+  projectRevision: z.number().int().nonnegative().optional().default(0),
+  committedProjectRevision: z.number().int().nonnegative().optional().default(0),
+  inputFingerprint: z.string().optional().default(""),
+  promptVersion: z.number().int().positive().optional().default(1),
   error: z.string().optional(),
 });
 export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
@@ -380,3 +394,17 @@ export const BeatSheetSchema = z.object({
   overallArc: z.string().describe("本章情绪/情节弧线一句话"),
 });
 export type BeatSheet = z.infer<typeof BeatSheetSchema>;
+
+export const BEAT_SHEET_CACHE_VERSION = 1;
+export const BeatSheetCacheSchema = z.object({
+  version: z.literal(BEAT_SHEET_CACHE_VERSION),
+  mode: z.enum(["continue", "regenerate"]),
+  baseContentHash: z.string(),
+  outlineHash: z.string(),
+  contentRevision: z.number().int().nonnegative(),
+  projectRevision: z.number().int().nonnegative(),
+  modelId: z.string(),
+  createdAt: z.string(),
+  sheet: BeatSheetSchema,
+});
+export type BeatSheetCache = z.infer<typeof BeatSheetCacheSchema>;

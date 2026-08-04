@@ -1,7 +1,12 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getProject, NotFoundError } from "@/lib/storage";
+import {
+  getProject,
+  DomainValidationError,
+  NotFoundError,
+  RevisionConflictError,
+} from "@/lib/storage";
 
 export class ApiError extends Error {
   constructor(
@@ -45,6 +50,20 @@ export function handleRouteError(error: unknown) {
   }
   if (error instanceof NotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+  if (error instanceof RevisionConflictError) {
+    return NextResponse.json(
+      {
+        error: error.message,
+        code: "REVISION_CONFLICT",
+        expectedRevision: error.expectedRevision,
+        actualRevision: error.actualRevision,
+      },
+      { status: 409 },
+    );
+  }
+  if (error instanceof DomainValidationError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof z.ZodError) {
     return NextResponse.json(

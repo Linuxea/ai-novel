@@ -38,6 +38,7 @@ async function addProjectFiles(zip: JSZip, dir: string): Promise<void> {
     "planning.json",
     "chapters.json",
     "chat.json",
+    "checks.json",
   ];
 
   for (const file of jsonFiles) {
@@ -49,7 +50,12 @@ async function addProjectFiles(zip: JSZip, dir: string): Promise<void> {
   if (!(await exists(chaptersDir))) return;
   const entries = await fs.readdir(chaptersDir, { withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.isFile() || !/^[\w-]+\.md$/.test(entry.name)) continue;
+    if (
+      !entry.isFile() ||
+      !/^[\w-]+\.(?:md|beats\.json)$/.test(entry.name)
+    ) {
+      continue;
+    }
     const rel = `chapters/${entry.name}`;
     zip.file(
       rel,

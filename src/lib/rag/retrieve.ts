@@ -13,7 +13,7 @@ import {
 function dedupePerOwner(ranked: RagHit[], topK: number): RagHit[] {
   const perOwner = new Map<string, RagHit[]>();
   for (const h of ranked) {
-    const key = `${h.source}:${h.ownerTitle}`;
+    const key = `${h.source}:${h.ownerId}`;
     const arr = perOwner.get(key) ?? [];
     if (arr.length < 2) arr.push(h);
     perOwner.set(key, arr);
@@ -35,7 +35,18 @@ export async function retrieveContext(
   mode: "bm25" | "embed" = "bm25",
 ): Promise<RagHit[]> {
   try {
-    const records = await readRagIndex(projectId);
+    const excluded = new Set(query.excludeOwnerIds ?? []);
+    const records = (await readRagIndex(projectId)).filter((record) => {
+      if (excluded.has(record.chunk.ownerId)) return false;
+      if (
+        query.maxChapterOrder != null &&
+        record.chunk.chapterOrder != null &&
+        record.chunk.chapterOrder > query.maxChapterOrder
+      ) {
+        return false;
+      }
+      return true;
+    });
     if (records.length === 0) return [];
 
     if (mode === "embed") {
@@ -61,6 +72,7 @@ export async function retrieveContext(
       return dedupePerOwner(
         ranked.map((x) => ({
           source: x.chunk.source,
+          ownerId: x.chunk.ownerId,
           ownerTitle: x.chunk.ownerTitle,
           chapterOrder: x.chunk.chapterOrder,
           text: x.chunk.text,
@@ -97,6 +109,7 @@ export async function retrieveContext(
     return dedupePerOwner(
       ranked.map((x) => ({
         source: x.chunk.source,
+        ownerId: x.chunk.ownerId,
         ownerTitle: x.chunk.ownerTitle,
         chapterOrder: x.chunk.chapterOrder,
         text: x.chunk.text,

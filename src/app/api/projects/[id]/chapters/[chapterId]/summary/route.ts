@@ -5,11 +5,15 @@ import { getModel } from "@/lib/ai/client";
 import { buildChapterSummaryPrompt } from "@/lib/ai/summary";
 import {
   getProject,
-  hashContent,
-  listChapters,
-  readChapterContent,
+  readChapterDocument,
+  RevisionConflictError,
   updateChapterSummary,
 } from "@/lib/storage";
+import { ChapterArtifactRequestSchema } from "@/lib/api-schemas";
+import { handleRouteError, parseJson } from "@/lib/api-route";
+import { buildSummaryInputFingerprint } from "@/lib/artifact-fingerprint";
+
+const SUMMARY_PROMPT_VERSION = 2;
 
 type Params = {
   params: Promise<{ id: string; chapterId: string }>;
@@ -28,52 +32,79 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const { id, chapterId } = await params;
-  const force = req.nextUrl.searchParams.get("force") === "1";
-
-  const project = await getProject(id);
-  if (!project) {
-    return NextResponse.json({ error: "项目不存在" }, { status: 404 });
-  }
-
-  const chapters = await listChapters(id);
-  const chapter = chapters.find((c) => c.id === chapterId);
-  if (!chapter) {
-    return NextResponse.json({ error: "章节不存在" }, { status: 404 });
-  }
-
-  const content = await readChapterContent(id, chapterId);
-  if (!content.trim()) {
-    return NextResponse.json(
-      { error: "正文为空，无法生成摘要" },
-      { status: 400 },
-    );
-  }
-
-  const contentHash = hashContent(content);
-
-  // 幂等：内容未变且非强制，直接复用已有摘要
-  if (!force && chapter.summary && chapter.summaryOfContentHash === contentHash) {
-    return NextResponse.json({
-      summary: chapter.summary,
-      contentHash,
-      cached: true,
-    });
-  }
-
   try {
+    const { expectedContentRevision, force = false } = await parseJson(
+      req,
+      ChapterArtifactRequestSchema,
+    );
+    const project = await getProject(id);
+    if (!project) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
+
+    const { chapter, content } = await readChapterDocument(id, chapterId);
+    if (chapter.contentRevision !== expectedContentRevision) {
+      throw new RevisionConflictError(
+        expectedContentRevision,
+        chapter.contentRevision,
+      );
+    }
+    if (!content.trim()) {
+      return NextResponse.json(
+        { error: "正文为空，无法生成摘要" },
+        { status: 400 },
+      );
+    }
+
+    const contentHash = chapter.contentHash;
+    const inputFingerprint = buildSummaryInputFingerprint(
+      project,
+      chapter,
+      SUMMARY_PROMPT_VERSION,
+    );
+    if (
+      !force &&
+      chapter.summary &&
+      chapter.summaryOfContentHash === contentHash &&
+      chapter.summaryInputFingerprint === inputFingerprint
+    ) {
+      return NextResponse.json({
+        summary: chapter.summary,
+        contentHash,
+        contentRevision: chapter.contentRevision,
+        chapter,
+        cached: true,
+      });
+    }
+
     const result = await generateText({
       model: getModel(project.aiModel || undefined),
       system: buildChapterSummaryPrompt(project, chapter),
       prompt: content,
       temperature: 0.3,
+      abortSignal: AbortSignal.any([
+        req.signal,
+        AbortSignal.timeout(45_000),
+      ]),
     });
     const summary = result.text.trim();
-    await updateChapterSummary(id, chapterId, summary, contentHash);
-    return NextResponse.json({ summary, contentHash, cached: false });
-  } catch (e) {
-    return NextResponse.json(
-      { error: `摘要生成失败：${(e as Error).message}` },
-      { status: 500 },
+    const updated = await updateChapterSummary(
+      id,
+      chapterId,
+      summary,
+      contentHash,
+      expectedContentRevision,
+      inputFingerprint,
+      SUMMARY_PROMPT_VERSION,
     );
+    return NextResponse.json({
+      summary,
+      contentHash,
+      contentRevision: updated.contentRevision,
+      chapter: updated,
+      cached: false,
+    });
+  } catch (e) {
+    return handleRouteError(e);
   }
 }
