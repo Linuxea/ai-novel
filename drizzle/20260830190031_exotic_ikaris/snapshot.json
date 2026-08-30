@@ -1,0 +1,980 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "056f40f5-bd2b-4c68-a74a-640e25b23372",
+  "prevIds": [
+    "c01d930a-1bc0-4936-887a-f2dcf86783c9"
+  ],
+  "ddl": [
+    {
+      "name": "domain_events",
+      "entityType": "tables"
+    },
+    {
+      "name": "job_events",
+      "entityType": "tables"
+    },
+    {
+      "name": "jobs",
+      "entityType": "tables"
+    },
+    {
+      "name": "project_catalog_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "project_model_preferences",
+      "entityType": "tables"
+    },
+    {
+      "name": "projects",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "event_id",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "event_name",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "envelope_json",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "max_attempts",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_owner",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_token",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "published_at",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failed_at",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "domain_events"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "cursor",
+      "entityType": "columns",
+      "table": "job_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "job_id",
+      "entityType": "columns",
+      "table": "job_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "event_type",
+      "entityType": "columns",
+      "table": "job_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "data_json",
+      "entityType": "columns",
+      "table": "job_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "job_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload_json",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "idempotency_key",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempt",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "max_attempts",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "run_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_owner",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_token",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "progress",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result_json",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_json",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cancel_requested_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "finished_at",
+      "entityType": "columns",
+      "table": "jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "project_catalog_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "project_catalog_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "project_model_preferences"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "role",
+      "entityType": "columns",
+      "table": "project_model_preferences"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model_id",
+      "entityType": "columns",
+      "table": "project_model_preferences"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "title",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "subtitle",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "genre",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "premise",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_audience",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_word_count",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "archived_from_status",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_sequence",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "columns": [
+        "job_id"
+      ],
+      "tableTo": "jobs",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_job_events_job_id_jobs_id_fk",
+      "entityType": "fks",
+      "table": "job_events"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "projects",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_project_model_preferences_project_id_projects_id_fk",
+      "entityType": "fks",
+      "table": "project_model_preferences"
+    },
+    {
+      "columns": [
+        "project_id",
+        "role"
+      ],
+      "nameExplicit": true,
+      "name": "project_model_preferences_pk",
+      "entityType": "pks",
+      "table": "project_model_preferences"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "domain_events_pk",
+      "table": "domain_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "cursor"
+      ],
+      "nameExplicit": false,
+      "name": "job_events_pk",
+      "table": "job_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "jobs_pk",
+      "table": "jobs",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "project_catalog_state_pk",
+      "table": "project_catalog_state",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "projects_pk",
+      "table": "projects",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "event_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "domain_events_event_id_unique",
+      "entityType": "indexes",
+      "table": "domain_events"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "domain_events_dispatch_idx",
+      "entityType": "indexes",
+      "table": "domain_events"
+    },
+    {
+      "columns": [
+        {
+          "value": "job_id",
+          "isExpression": false
+        },
+        {
+          "value": "cursor",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "job_events_job_cursor_idx",
+      "entityType": "indexes",
+      "table": "job_events"
+    },
+    {
+      "columns": [
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "idempotency_key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "jobs_type_idempotency_unique",
+      "entityType": "indexes",
+      "table": "jobs"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "run_at",
+          "isExpression": false
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "jobs_claim_idx",
+      "entityType": "indexes",
+      "table": "jobs"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "projects_status_updated_idx",
+      "entityType": "indexes",
+      "table": "projects"
+    },
+    {
+      "columns": [
+        {
+          "value": "\"updated_at\" DESC",
+          "isExpression": true
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"projects\".\"status\" <> 'archived'",
+      "origin": "manual",
+      "name": "projects_active_updated_id_idx",
+      "entityType": "indexes",
+      "table": "projects"
+    },
+    {
+      "columns": [
+        {
+          "value": "genre",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "projects_genre_idx",
+      "entityType": "indexes",
+      "table": "projects"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'published', 'failed')",
+      "name": "domain_events_status_check",
+      "entityType": "checks",
+      "table": "domain_events"
+    },
+    {
+      "value": "\"attempts\" >= 0",
+      "name": "domain_events_attempts_check",
+      "entityType": "checks",
+      "table": "domain_events"
+    },
+    {
+      "value": "\"max_attempts\" > 0",
+      "name": "domain_events_max_attempts_check",
+      "entityType": "checks",
+      "table": "domain_events"
+    },
+    {
+      "value": "\"status\" IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+      "name": "jobs_status_check",
+      "entityType": "checks",
+      "table": "jobs"
+    },
+    {
+      "value": "\"attempt\" >= 0",
+      "name": "jobs_attempt_check",
+      "entityType": "checks",
+      "table": "jobs"
+    },
+    {
+      "value": "\"max_attempts\" > 0",
+      "name": "jobs_max_attempts_check",
+      "entityType": "checks",
+      "table": "jobs"
+    },
+    {
+      "value": "\"progress\" BETWEEN 0 AND 100",
+      "name": "jobs_progress_check",
+      "entityType": "checks",
+      "table": "jobs"
+    },
+    {
+      "value": "\"id\" = 1",
+      "name": "project_catalog_state_singleton_check",
+      "entityType": "checks",
+      "table": "project_catalog_state"
+    },
+    {
+      "value": "\"version\" >= 0",
+      "name": "project_catalog_state_version_check",
+      "entityType": "checks",
+      "table": "project_catalog_state"
+    },
+    {
+      "value": "\"role\" IN ('chat', 'writing', 'review', 'embedding')",
+      "name": "project_model_preferences_role_check",
+      "entityType": "checks",
+      "table": "project_model_preferences"
+    },
+    {
+      "value": "length(trim(\"model_id\")) BETWEEN 1 AND 160",
+      "name": "project_model_preferences_model_length_check",
+      "entityType": "checks",
+      "table": "project_model_preferences"
+    },
+    {
+      "value": "length(trim(\"title\")) BETWEEN 1 AND 80",
+      "name": "projects_title_length_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "\"subtitle\" IS NULL OR length(trim(\"subtitle\")) BETWEEN 1 AND 120",
+      "name": "projects_subtitle_length_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "length(trim(\"genre\")) BETWEEN 1 AND 40",
+      "name": "projects_genre_length_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "length(trim(\"premise\")) BETWEEN 1 AND 2000",
+      "name": "projects_premise_length_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "length(trim(\"target_audience\")) BETWEEN 1 AND 200",
+      "name": "projects_target_audience_length_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "\"target_word_count\" BETWEEN 1000 AND 10000000",
+      "name": "projects_target_word_count_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "\"status\" IN ('planning', 'writing', 'revising', 'completed', 'archived')",
+      "name": "projects_status_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "(\n        \"status\" = 'archived'\n        AND \"archived_from_status\" IN ('planning', 'writing', 'revising', 'completed')\n      ) OR (\n        \"status\" <> 'archived'\n        AND \"archived_from_status\" IS NULL\n      )",
+      "name": "projects_archive_state_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "\"version\" > 0",
+      "name": "projects_version_check",
+      "entityType": "checks",
+      "table": "projects"
+    },
+    {
+      "value": "\"project_sequence\" > 0",
+      "name": "projects_sequence_check",
+      "entityType": "checks",
+      "table": "projects"
+    }
+  ],
+  "renames": []
+}

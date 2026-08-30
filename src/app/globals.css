@@ -4,7 +4,8 @@
 
 @layer base {
   :root {
-    --font-sans: ui-sans-serif, system-ui, sans-serif;
+    --font-sans: "Noto Sans CJK SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+    --font-serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", STSong, Georgia, serif;
     --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
     --background: 0 0% 100%;

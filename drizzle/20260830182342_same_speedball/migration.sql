@@ -1,0 +1,1 @@
+CREATE INDEX `projects_active_updated_id_idx` ON `projects` ("updated_at" DESC,`id`) WHERE "projects"."status" <> 'archived';

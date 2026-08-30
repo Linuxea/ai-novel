@@ -16,6 +16,18 @@ export const env = {
   AI_MODEL: getEnv("AI_MODEL", "deepseek-v4-flash"),
   /** 数据存储根目录（项目根下的 data/） */
   DATA_DIR: getEnv("DATA_DIR", "data"),
+  DATABASE_PATH: getEnv(
+    "DATABASE_PATH",
+    "data/ai-novel.sqlite",
+  ),
+  PLATFORM_WORKERS_ENABLED: getEnv(
+    "PLATFORM_WORKERS_ENABLED",
+    "true",
+  ),
+  PLATFORM_WORKER_INTERVAL_MS: getEnv(
+    "PLATFORM_WORKER_INTERVAL_MS",
+    "1000",
+  ),
   /** RAG 向量检索：OpenAI 兼容 embedding 端点（可指 localhost Ollama/Xinference 或云端 BGE） */
   EMBED_API_KEY: getEnv("EMBED_API_KEY"),
   EMBED_BASE_URL: getEnv("EMBED_BASE_URL", ""),

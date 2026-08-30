@@ -5,14 +5,23 @@ Compact guidance for OpenCode sessions. High-signal only — read before editing
 ## Commands
 
 ```bash
-npm run dev      # dev server (Turbopack), http://localhost:3000
-npm run build    # production build
-npm run lint     # eslint
-npm run typecheck # TypeScript
-npm test         # Vitest regression suite
+npm run dev              # dev server (Turbopack), http://localhost:3000
+npm run build            # production build
+npm run lint             # eslint + architecture import boundaries
+npm run typecheck        # TypeScript
+npm test                 # all Vitest regression/unit/integration/component tests
+npm run test:unit        # domain + architecture tests (Node)
+npm run test:integration # application + SQLite fixture tests (Node)
+npm run test:component   # React component tests (jsdom)
+npm run test:e2e         # Playwright E2E (opt-in; starts dev server)
+npm run db:migrate       # apply generated SQLite migrations
+npm run db:backup -- <path> # consistent SQLite backup
+npm run db:restore -- <path> # atomic restore; stop app first
 ```
 
 Verify order before considering work done: **lint → typecheck → test → build**. All four must pass clean (currently do).
+Run the matching layered command while iterating; run E2E when changing a browser-visible flow. `npm test` never downloads or launches a browser and must not call a real AI provider.
+The supported runtime is Node.js **^22.22.2 || ^24.15.0 || >=26.0.0**. E2E uses unique `DATA_DIR`, `.next-e2e`, and `.playwright-e2e` run directories, forces empty AI/embedding credentials, and only retains that run's trace/report when it fails.
 
 ## Toolchain quirks (gotchas that will bite you)
 
@@ -39,7 +48,25 @@ Verify order before considering work done: **lint → typecheck → test → bui
 ### Next.js 16
 - Dynamic route `params`/`searchParams` are **`Promise`** — `await params` in every route handler and page.
 
+### Drizzle uses the Node SQLite RC line
+- The target adapter is `drizzle-orm/node-sqlite` over built-in `node:sqlite`; do not add `better-sqlite3`, `sqlite3`, libSQL, or another native SQLite package.
+- `drizzle-orm` and `drizzle-kit` are intentionally pinned exactly to matching `1.0.0-rc.4` because the `0.45` stable line does not expose the Node SQLite adapter. Upgrade them together only after confirming that import path and the SQLite fixture still pass.
+
 ## Architecture
+
+### Target modular monolith (migration in progress)
+
+- The target is a **Next.js 16 modular monolith** documented in `docs/architecture/`.
+- New business code belongs to one of six vertical modules under `src/modules/`: `projects`, `canon`, `narrative`, `manuscript`, `changes`, `intelligence`.
+- Every module's `index.ts` is its public entrypoint. Cross-module imports MUST use `@/modules/<module>` and MUST NOT import internal paths. Inside one module, use relative imports.
+- Module domain code depends only on its local domain and `src/shared/contracts`; it MUST NOT depend on Next.js, Drizzle/SQLite, AI SDKs, `src/platform`, or legacy AI code.
+- Technical adapters live under `src/platform/`: `database`, `events`, `jobs`, `ai`, `observability`. Shared code is limited to stable contracts in `src/shared/contracts`.
+- The new platform database defaults to `data/ai-novel.sqlite` (`DATABASE_PATH`). It is separate from legacy `data/projects`, uses generated SQL migrations under `drizzle/`, and must never read or mutate legacy project files. Connections enable WAL, foreign keys, and busy timeout; synchronous Unit of Work callbacks must not perform AI/network/async work.
+- Node instrumentation starts one global outbox/job worker pair unless building, testing, running Edge, or `PLATFORM_WORKERS_ENABLED=false`. Timers are stoppable/unref'ed. Before `npm run db:restore -- <path>`, stop the app/workers; use `npm run db:backup -- <path>` for a consistent database backup. These commands do not back up `data/projects`.
+- `eslint.config.mjs` and `tests/architecture/` are executable boundaries, not advisory documentation. Do not disable them to land a feature.
+- The legacy implementation below remains active during migration. Until a complete use case has switched with data compatibility and regression coverage, do not delete or casually refactor its `src/app`, `src/lib`, file-storage, or sidecar paths.
+- **Projects vertical slice is live**: root `/`, `/studio/[projectId]`, and `/api/v1/projects` use the SQLite `NovelProject` aggregate. New project links must stay under `/studio`; never route them into the legacy `/projects/[id]` store. Project writes require `expectedVersion`, increment `version` and `projectSequence` once, and commit state plus `projects.project.<action>.v1` outbox events in one Unit of Work. TanStack Query owns new project server state; do not mirror it into Zustand.
+- The versioned public `NovelExportManifestSchema` currently registers only the `projects` contribution. SQLite files are never an export/interchange format; full zip export remains on the legacy path until later module slices migrate.
 
 - **Next.js App Router**, all under `src/app`. API routes in `src/app/api/**`, pages in `src/app/projects/[id]/**`.
 - **Application commands** live in `src/lib/application/project-commands.ts`. Routes call these commands for canonical mutations; each command holds one reentrant project transaction and returns a revision-stamped response from `src/lib/api-contracts.ts`. Keep HTTP parsing in routes and file CRUD in `storage.ts`; do not move snapshot orchestration back into either layer.
@@ -75,6 +102,7 @@ Schema-shape changes must add an ordered `Project.schemaVersion` migration; opti
 - Without `AI_API_KEY`, `/api/chat` returns 503 with a friendly message (not a crash).
 - Per-project feature toggles live on `Project` (settable from settings page): `ragMode` (off/bm25/embed), `ragTopK`, `generateStrategy` (auto/single/multi), `multiStepCritique`, `multiStepRewrite`, `autoResolveForeshadow`. All default to safe/off states.
 - Runtime data lives in `data/` (gitignored). Deleting it loses all projects.
+- `DATABASE_PATH` stores the new project catalogue as well as platform outbox/jobs. `DATA_DIR/projects` remains the separate legacy content store; backup or restore each boundary with its own supported workflow.
 
 ## Style
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppProviders } from "./providers";
 
 export const metadata: Metadata = {
   title: "墨章 · AI 小说生成器",
@@ -21,10 +22,12 @@ export default function RootLayout({
         <link rel="stylesheet" href="/xyflow.css" />
       </head>
       <body className="min-h-full flex flex-col bg-background">
-        <TooltipProvider>
-          {children}
-          <Toaster richColors position="top-center" />
-        </TooltipProvider>
+        <AppProviders>
+          <TooltipProvider>
+            {children}
+            <Toaster richColors position="top-center" />
+          </TooltipProvider>
+        </AppProviders>
       </body>
     </html>
   );
